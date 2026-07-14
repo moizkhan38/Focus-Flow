@@ -119,7 +119,7 @@ Standup bot :3000 (Slack signature verified, internal-key to Express, daily remi
 **Accept:** `git status` clean (ignoring untracked non-source files); build passed.
 **Verify (Fable):** `git log -1 --stat` shows the 5 files; `git status --short` empty; `cd frontend && npm run build` exits 0.
 
-### Step 0.1 — Rotate ALL leaked secrets `[ ]` **USER-ACTION**
+### Step 0.1 — Rotate ALL leaked secrets `[x]` **USER-ACTION**
 **Size:** S (user) · **Owner:** USER (Opus guides + verifies hygiene)
 **Why:** A2. Live GitHub PAT, Jira API token, Slack bot token, Gemini key sit in `.env` files; DB password is in **public git history** via `db.js`. The standup bot was exposed via a public ngrok tunnel. Treat all five as compromised.
 **Spec (user does, Opus provides this checklist):**
@@ -610,8 +610,11 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-14 | 0.0 | `p0.0: description validation across all 3 layers + standup ticket extraction safety net` | Executed by Fable while establishing the regression baseline (build + py_compile green first) |
 | 2026-07-14 | harness | `test: regression baseline — 74 unit tests + smoke harness across all 4 services` | Also fixed missing `python-dotenv` in epic-generator/requirements.txt; created standup-bot/.venv |
 | 2026-07-14 | 0.2 | `p0.2: remove hardcoded DB password from db.js; fail-fast + DATABASE_SSL` | Both scripts already load dotenv; db.js intentionally does NOT self-load it (keeps fail-fast verifiable). Note: old password remains in git history (commit cdd635f) — Step 0.1 rotation still required. |
+| 2026-07-14 | 0.1 | (user action — .env only, no commit) | User rotated all 5. Each verified live: Postgres (backend connects), GitHub PAT (200, `repo` scope, user moizkhan38), Jira token (200 /myself, both backend + bot .env), Gemini key (200 models list, both epic-generator + bot .env), Slack bot token (auth.test ok, team "Focus Flow") + signing secret (32-char). **FOLLOW-UP:** the GitHub token was briefly pasted in chat during setup — regenerate it once and update backend/.env so it has never left the machine. |
 
 # Verification Log (Fable appends; newest last)
 | Date | Step | Result | Evidence |
 |---|---|---|---|
 | 2026-07-14 | 0.0 | ✓ | Verified via full harness: 74/74 unit tests green; smoke `--ai` 25 PASS / 0 FAIL (3 epics, 6 stories generated end-to-end); `npm run build` clean; WIP validation behavior pinned by backend/frontend/flask suites |
+| 2026-07-14 | 0.2 | ✓ | Fail-fast exits 1 without DATABASE_URL (clear msg); connects with env (ping ok); `git grep moizdanishmand25` clean in tracked source; backend units 26/26; smoke 22 PASS / 0 FAIL |
+| 2026-07-14 | 0.1 | ✓ | All 5 credentials authenticated against their live APIs (Postgres/GitHub/Jira/Gemini/Slack); `git log --all -- **/.env` empty; `git grep` of secret patterns in tracked files clean |
