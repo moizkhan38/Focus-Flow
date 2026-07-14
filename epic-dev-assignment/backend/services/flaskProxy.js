@@ -2,14 +2,21 @@ import fetch from 'node-fetch';
 
 const FLASK_URL = process.env.FLASK_URL || 'http://localhost:5000';
 const FETCH_TIMEOUT = 120000;
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
+
+// Attach the shared internal-service key so Flask (when gated in production)
+// accepts calls from this gateway. No-op locally when the key is unset.
+function flaskHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  if (INTERNAL_API_KEY) headers['X-Internal-Key'] = INTERNAL_API_KEY;
+  return headers;
+}
 
 export async function generateEpics(description) {
   try {
     const response = await fetch(`${FLASK_URL}/api/generate`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: flaskHeaders(),
       body: JSON.stringify({ description }),
       signal: AbortSignal.timeout(FETCH_TIMEOUT)
     });
@@ -30,9 +37,7 @@ export async function regenerateComponent(type, projectDescription, context) {
   try {
     const response = await fetch(`${FLASK_URL}/api/regenerate`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: flaskHeaders(),
       body: JSON.stringify({
         type,
         project_description: projectDescription,
@@ -57,9 +62,7 @@ export async function classifyEpic(epicTitle, epicDescription) {
   try {
     const response = await fetch(`${FLASK_URL}/api/classify`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: flaskHeaders(),
       body: JSON.stringify({
         epic_title: epicTitle,
         epic_description: epicDescription

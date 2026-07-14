@@ -14,7 +14,31 @@ import sys
 load_dotenv(override=True)
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for API calls
+
+# CORS restricted to the Express gateway (and dev frontend). Flask is an internal
+# service — it must never be called directly by a browser in production.
+CORS_ORIGINS = [o.strip() for o in os.environ.get(
+    "CORS_ORIGINS", "http://localhost:3003,http://localhost:5173"
+).split(",") if o.strip()]
+CORS(app, origins=CORS_ORIGINS)
+
+# Internal-key gate: when INTERNAL_API_KEY is set (production), every /api/* call
+# except the health check must present a matching X-Internal-Key header. Express
+# sends it (see services/flaskProxy.js). Unset in local dev → no gating.
+INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "")
+
+
+@app.before_request
+def _require_internal_key():
+    if not INTERNAL_API_KEY:
+        return None
+    if request.method == 'OPTIONS' or not request.path.startswith('/api/'):
+        return None
+    if request.path == '/api/health':
+        return None
+    if request.headers.get('X-Internal-Key') != INTERNAL_API_KEY:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+    return None
 
 # Keep in sync with frontend (frontend/src/utils/descriptionValidator.js)
 # and Express (epic-dev-assignment/backend/routes/epics.js).
@@ -84,9 +108,9 @@ def check_description(description):
 # Set your API key as environment variable: GEMINI_API_KEY
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
-# Debug: Check if API key is loaded
+# Confirm the key is present without ever logging any part of its value.
 if GEMINI_API_KEY:
-    print(f"[DEBUG] API Key loaded: {GEMINI_API_KEY[:25]}...")
+    print("[INFO] GEMINI_API_KEY loaded")
     sys.stdout.flush()
 else:
     print("[WARNING] No GEMINI_API_KEY found in environment!")
@@ -296,9 +320,11 @@ def generate():
         })
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': 'Generation service error'
         }), 500
 
 
@@ -453,7 +479,7 @@ def regenerate():
         sys.stdout.flush()
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': 'Regeneration service error'
         }), 500
 
 
@@ -852,19 +878,28 @@ Return ONLY the category name, nothing else."""
             }), 500
 
     except Exception as e:
+        print(f"[ERROR] Classification failed: {e}")
+        sys.stdout.flush()
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': 'Classification service error'
         }), 500
 
 
 if __name__ == '__main__':
+    # Production defaults: debug OFF, bind loopback only. Override via env.
+    # Enabling debug exposes the Werkzeug console (an RCE risk); never default it on.
+    debug = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "5000"))
+
     print("\n" + "="*80)
     print("EPIC/STORY GENERATOR WEB APP")
     print("="*80)
-    print("\nServer running at: http://localhost:5000")
+    print(f"\nDev server: http://{host}:{port}  (debug={debug})")
+    print("For production, run behind a real WSGI server, e.g.:")
+    print(f"  waitress-serve --host={host} --port={port} --threads=8 --channel-timeout=300 web_app:app")
     print("Press Ctrl+C to stop the server")
     print("\n" + "="*80 + "\n")
 
-    # Run the Flask app
-    app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=True)
+    app.run(debug=debug, host=host, port=port, use_reloader=debug)

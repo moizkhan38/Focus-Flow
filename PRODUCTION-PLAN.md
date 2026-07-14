@@ -147,7 +147,7 @@ Standup bot :3000 (Slack signature verified, internal-key to Express, daily remi
 **Accept:** `git grep moizdanishmand25` → nothing; starting server without `DATABASE_URL` exits 1 with a clear message.
 **Verify (Fable):** run `node -e "delete process.env.DATABASE_URL; import('./db.js')"` from `backend/` (with .env temporarily renamed or env cleared) → exit code 1, clear message; grep confirms no credential string anywhere tracked.
 
-### Step 0.3 — Flask epic-generator hardening `[ ]`
+### Step 0.3 — Flask epic-generator hardening `[x]`
 **Size:** M · **Owner:** Opus
 **Why:** A3. `debug=True` + `0.0.0.0` = remote code execution; wide-open CORS; API-key prefix logged; raw `str(e)` to clients; single-threaded dev server for 60-120s Gemini calls.
 **Files:** `epic-generator/web_app.py`, `epic-generator/requirements.txt`, `epic-generator/.env.example`
@@ -611,6 +611,7 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-14 | harness | `test: regression baseline — 74 unit tests + smoke harness across all 4 services` | Also fixed missing `python-dotenv` in epic-generator/requirements.txt; created standup-bot/.venv |
 | 2026-07-14 | 0.2 | `p0.2: remove hardcoded DB password from db.js; fail-fast + DATABASE_SSL` | Both scripts already load dotenv; db.js intentionally does NOT self-load it (keeps fail-fast verifiable). Note: old password remains in git history (commit cdd635f) — Step 0.1 rotation still required. |
 | 2026-07-14 | 0.1 | (user action — .env only, no commit) | User rotated all 5. Each verified live: Postgres (backend connects), GitHub PAT (200, `repo` scope, user moizkhan38), Jira token (200 /myself, both backend + bot .env), Gemini key (200 models list, both epic-generator + bot .env), Slack bot token (auth.test ok, team "Focus Flow") + signing secret (32-char). **FOLLOW-UP:** the GitHub token was briefly pasted in chat during setup — regenerate it once and update backend/.env so it has never left the machine. |
+| 2026-07-14 | 0.3 | `p0.3: harden Flask — debug off, CORS lock, internal-key gate, waitress` | app.run env-driven (FLASK_DEBUG/HOST/PORT, defaults false/127.0.0.1/5000); dropped API-key debug print; CORS→CORS_ORIGINS; before_request X-Internal-Key gate (health exempt); 500s return generic msg + log; waitress in requirements; flaskProxy.js sends X-Internal-Key. jira.js:42 unchanged (hits exempt /api/health). |
 
 # Verification Log (Fable appends; newest last)
 | Date | Step | Result | Evidence |
@@ -618,3 +619,4 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-14 | 0.0 | ✓ | Verified via full harness: 74/74 unit tests green; smoke `--ai` 25 PASS / 0 FAIL (3 epics, 6 stories generated end-to-end); `npm run build` clean; WIP validation behavior pinned by backend/frontend/flask suites |
 | 2026-07-14 | 0.2 | ✓ | Fail-fast exits 1 without DATABASE_URL (clear msg); connects with env (ping ok); `git grep moizdanishmand25` clean in tracked source; backend units 26/26; smoke 22 PASS / 0 FAIL |
 | 2026-07-14 | 0.1 | ✓ | All 5 credentials authenticated against their live APIs (Postgres/GitHub/Jira/Gemini/Slack); `git log --all -- **/.env` empty; `git grep` of secret patterns in tracked files clean |
+| 2026-07-14 | 0.3 | ✓ | Flask boots debug=False on 127.0.0.1; gate with INTERNAL_API_KEY=testkey123 → POST /api/generate no key=401, GET /api/health no key=200, POST with key=400(validation); no `debug=True`/key-logging in source; waitress 3.0.2 importable; Flask units 21/21 |
