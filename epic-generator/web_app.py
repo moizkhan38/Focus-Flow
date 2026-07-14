@@ -8,12 +8,77 @@ from flask_cors import CORS
 from src.gemini_generator import GeminiEpicGenerator
 from dotenv import load_dotenv
 import os
+import re
 import sys
 
 load_dotenv(override=True)
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for API calls
+
+# Keep in sync with frontend (frontend/src/utils/descriptionValidator.js)
+# and Express (epic-dev-assignment/backend/routes/epics.js).
+MIN_DESCRIPTION_LENGTH = 30
+MAX_DESCRIPTION_LENGTH = 4000
+MIN_MEANINGFUL_WORDS = 5
+
+_PLACEHOLDER_PATTERNS = [
+    re.compile(r'\bno description\b', re.I),
+    re.compile(r'\bnot available\b', re.I),
+    re.compile(r'\bnot provided\b', re.I),
+    re.compile(r'\blorem ipsum\b', re.I),
+    re.compile(r'\bplaceholder\b', re.I),
+    re.compile(r'^\s*(n/a|na|tbd|none|nothing|test|asdf|qwerty|idk|hello world)\s*\.?\s*$', re.I),
+]
+
+_STOPWORDS = {
+    'a','an','the','and','or','of','to','in','on','at','by','for','with','as','from','into',
+    'is','are','was','were','be','been','being','have','has','had','do','does','did',
+    'will','would','can','could','should','may','might','must','that','this','these','those',
+    'it','its','no','not','but','if','when','where','what','who','our','your','their','they','them',
+}
+
+_PRODUCT_TERMS = {
+    'app','apps','application','applications','system','platform','website','site','sites',
+    'dashboard','tool','tools','service','services','software','product','portal','marketplace',
+    'store','shop','blog','forum','network','game','bot','chatbot','assistant',
+    'mobile','web','desktop','cli','api','sdk',
+    'extension','plugin','library','framework','engine','pipeline','generator',
+    'tracker','manager','scheduler','planner','calculator','editor','viewer',
+    'management','analytics','crm','cms','erp',
+}
+
+_ACTION_VERBS = {
+    'build','create','develop','make','design','implement','launch','deploy',
+    'generate','automate','integrate','manage','track','monitor','organize',
+    'schedule','analyze','process','support','provide','enable',
+}
+
+_TOKEN_RE = re.compile(r"[a-z][a-z'-]*")
+
+_MEANINGFUL_ERROR = (
+    'Please provide a meaningful description with real features — '
+    'describe what to build (e.g. app, platform, system) and its main features.'
+)
+
+
+def check_description(description):
+    value = (description or '').strip()
+    if len(value) == 0:
+        return 'Project description is required'
+    if len(value) < MIN_DESCRIPTION_LENGTH:
+        return f'Description is too short — minimum {MIN_DESCRIPTION_LENGTH} characters.'
+    if len(value) > MAX_DESCRIPTION_LENGTH:
+        return f'Description is too long — maximum {MAX_DESCRIPTION_LENGTH} characters.'
+    if any(p.search(value) for p in _PLACEHOLDER_PATTERNS):
+        return _MEANINGFUL_ERROR
+    tokens = _TOKEN_RE.findall(value.lower())
+    meaningful = {t for t in tokens if len(t) >= 4 and t not in _STOPWORDS}
+    has_product = any(t in _PRODUCT_TERMS for t in tokens)
+    has_action = any(t in _ACTION_VERBS for t in tokens)
+    if len(meaningful) < MIN_MEANINGFUL_WORDS or not (has_product or has_action):
+        return _MEANINGFUL_ERROR
+    return None
 
 # Configuration - Google Gemini API Key
 # Set your API key as environment variable: GEMINI_API_KEY
@@ -193,11 +258,9 @@ def generate():
         data = request.get_json()
         description = data.get('description', '').strip()
 
-        if not description:
-            return jsonify({
-                'success': False,
-                'error': 'Please provide a project description'
-            }), 400
+        length_error = check_description(description)
+        if length_error:
+            return jsonify({'success': False, 'error': length_error}), 400
 
         if not gemini_generator:
             return jsonify({
@@ -308,6 +371,10 @@ def regenerate():
                 'success': False,
                 'error': 'Missing type or project_description'
             }), 400
+
+        length_error = check_description(project_description)
+        if length_error:
+            return jsonify({'success': False, 'error': length_error}), 400
 
         if not gemini_generator:
             return jsonify({

@@ -1,4 +1,5 @@
 import os
+import re
 import json
 from concurrent.futures import ThreadPoolExecutor
 import requests
@@ -32,6 +33,7 @@ background_executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="stan
 # Jira project cache. Slack slash commands must respond in <3s, so we can't
 # call Jira inline. Cache the project list and refresh in the background.
 _jira_projects_cache = {"options": [], "fetched_at": 0}
+_jira_project_names = {}  # key -> friendly name, populated alongside the options cache
 JIRA_PROJECTS_TTL_SECONDS = 300  # refresh every 5 minutes
 
 
@@ -59,11 +61,26 @@ def refresh_jira_projects_cache():
         ] or _build_default_project_options()
         _jira_projects_cache["options"] = options
         _jira_projects_cache["fetched_at"] = time.time()
+        _jira_project_names.clear()
+        for p in projects:
+            if p.get("key") and p.get("name"):
+                _jira_project_names[p["key"]] = p["name"]
         print(f"[JIRA-CACHE] Refreshed {len(options)} project options")
     except Exception as e:
         print(f"[JIRA-CACHE] Refresh failed: {e}")
         if not _jira_projects_cache["options"]:
             _jira_projects_cache["options"] = _build_default_project_options()
+
+
+def get_project_name(key):
+    """Return the friendly Jira project name for a key, falling back to the key itself."""
+    return _jira_project_names.get(key, key)
+
+
+def _format_project(key):
+    """Render a project as 'Name (KEY)' if a name is known, else just the key."""
+    name = _jira_project_names.get(key)
+    return f"{name} ({key})" if name and name != key else key
 
 
 def get_cached_project_options():
@@ -258,9 +275,14 @@ def process_standup_logic(user_id, project_key, yesterday, today, blocker):
     )
     prompt = f"""Analyze this standup. Respond ONLY with JSON.
 
+    The active Jira project key is: {project_key}
+
     RULES for Jira IDs:
     - ALWAYS convert ticket IDs to UPPERCASE (e.g., 'scrum-1' becomes 'SCRUM-1').
     - ALWAYS ensure there is a dash between the letters and numbers.
+    - Loose references like "{project_key.lower()} 3", "{project_key} 6", "{project_key.lower()}3", or just a bare number when the user is clearly talking about a ticket in the active project, MUST be normalized to "{project_key}-N" (e.g., "{project_key.lower()} 3" -> "{project_key}-3").
+    - Be AGGRESSIVE about extraction: if the user mentions the project name (any case) followed by or attached to a number, treat it as a ticket reference. Examples to extract: "done {project_key.lower()} 3", "finished {project_key} 7", "working on {project_key.lower()}-12", "will do {project_key} 6 and {project_key} 9".
+    - Do NOT extract numbers that are clearly counts/quantities and unrelated to the project (e.g., "spent 3 hours", "fixed 2 bugs in unrelated areas").
     - 'finished_tickets': Jira IDs mentioned in Yesterday's work.
     - 'today_tickets': Jira IDs mentioned in Today's work.
 
@@ -284,6 +306,41 @@ def process_standup_logic(user_id, project_key, yesterday, today, blocker):
             if raw_text.endswith("```"):
                 raw_text = raw_text[:-3].strip()
         analysis = json.loads(raw_text)
+
+        # Regex safety net: deterministically extract ticket IDs even if Gemini missed them.
+        # Matches "FINAL-3", "final 3", "final3", "FINAL 6" (case-insensitive, optional space/dash).
+        ticket_re = re.compile(
+            rf"\b{re.escape(project_key)}\s*-?\s*(\d+)\b",
+            re.IGNORECASE,
+        )
+
+        def _extract(text):
+            return [f"{project_key.upper()}-{m}" for m in ticket_re.findall(text or "")]
+
+        def _merge(existing, extras):
+            seen = {t.upper() for t in existing or []}
+            merged = list(existing or [])
+            for t in extras:
+                if t.upper() not in seen:
+                    merged.append(t)
+                    seen.add(t.upper())
+            return merged
+
+        regex_finished = _extract(yesterday)
+        regex_today = _extract(today)
+        print(
+            f"[DEBUG] project_key={project_key!r} "
+            f"yesterday={yesterday!r} -> regex {regex_finished}, "
+            f"today={today!r} -> regex {regex_today}, "
+            f"gemini finished={analysis.get('finished_tickets')}, "
+            f"gemini today={analysis.get('today_tickets')}"
+        )
+        analysis["finished_tickets"] = _merge(
+            analysis.get("finished_tickets"), regex_finished
+        )
+        analysis["today_tickets"] = _merge(
+            analysis.get("today_tickets"), regex_today
+        )
 
         # Get the user's Jira account ID for ownership check
         jira_email = os.environ.get("JIRA_EMAIL")
@@ -369,10 +426,12 @@ def process_standup_logic(user_id, project_key, yesterday, today, blocker):
             background_executor.submit(send_to_standup_analyzer, standup_entry)
 
     except Exception as e:
-        print(f"[ERROR] Logic Error: {e}")
+        import traceback
+        print(f"[ERROR] Logic Error: {type(e).__name__}: {e}")
+        traceback.print_exc()
         slack_client.chat_postMessage(
             channel=user_id,
-            text="[WARNING] AI Analysis failed (check credits/billing).",
+            text=f"[WARNING] Standup processing failed: {type(e).__name__}: {e}",
         )
 
 
@@ -722,32 +781,112 @@ def get_all_slack_members():
                 members.append({
                     "id": member["id"],
                     "name": member["profile"].get("real_name", "Unknown"),
+                    "email": (member["profile"].get("email") or "").lower(),
                 })
     except Exception as e:
         print(f"[ERROR] Failed to fetch Slack members: {e}")
     return members
 
 
-# Tracks who has already received a reminder today: {date_str: set(user_ids)}.
-# Lets us escalate copy on subsequent pings without spamming "Good morning!" repeatedly.
+# Tracks who has already received their first reminder today: {date_str: set(user_ids)}.
+# First ping = combined digest; any later ping in the same day = one DM per pending project.
 _reminded_today = {}
 
 
 def _users_submitted_today():
-    """Return the set of user_ids who already submitted a standup today."""
+    """Return the set of (user_id, project_key) tuples that submitted a standup today."""
     today_str = date.today().isoformat()
     db_data = _load_standups_from_db()
     standup_data = db_data if db_data is not None else _load_standups_from_json()
     return {
-        e.get("user_id")
+        (e.get("user_id"), e.get("project_key"))
         for e in standup_data
-        if (e.get("timestamp") or "").startswith(today_str) and e.get("user_id")
+        if (e.get("timestamp") or "").startswith(today_str)
+        and e.get("user_id")
+        and e.get("project_key")
     }
 
 
+def _get_user_projects_map(members):
+    """Map each Slack user_id -> set of Jira project keys they have active assignments in.
+
+    Active = issue is open (statusCategory != Done) AND assignee is set.
+    Builds the map by querying Jira once per cached project and grouping by assignee email.
+    """
+    email_to_uid = {m["email"]: m["id"] for m in members if m.get("email")}
+    print(f"[REMINDER-DEBUG] Slack members with email: {list(email_to_uid.keys())}")
+    members_without_email = [m["name"] for m in members if not m.get("email")]
+    if members_without_email:
+        print(
+            f"[REMINDER-DEBUG] WARNING: Slack members WITHOUT email "
+            f"(check users:read.email scope): {members_without_email}"
+        )
+
+    user_projects = {}
+    seen_jira_emails = set()
+
+    project_options = get_cached_project_options()
+    project_keys = [opt.get("value") for opt in project_options if opt.get("value")]
+
+    for key in project_keys:
+        try:
+            jql = (
+                f'project = "{key}" AND statusCategory != Done '
+                f'AND assignee IS NOT EMPTY'
+            )
+            result = jira.jql(jql, fields="assignee", limit=1000)
+            for issue in result.get("issues", []):
+                assignee = issue.get("fields", {}).get("assignee") or {}
+                email = (assignee.get("emailAddress") or "").lower()
+                if not email:
+                    continue
+                seen_jira_emails.add(email)
+                uid = email_to_uid.get(email)
+                if not uid:
+                    continue
+                user_projects.setdefault(uid, set()).add(key)
+        except Exception as e:
+            print(f"[REMINDER] Could not fetch assignees for {key}: {e}")
+
+    unmatched = seen_jira_emails - set(email_to_uid.keys())
+    if unmatched:
+        print(
+            f"[REMINDER-DEBUG] Jira assignee emails NOT matched to any Slack user: "
+            f"{sorted(unmatched)}"
+        )
+    print(f"[REMINDER-DEBUG] Final user->projects map: { {uid: sorted(ps) for uid, ps in user_projects.items()} }")
+
+    return user_projects
+
+
+def _build_digest_blocks(pending_projects):
+    """Reminder body listing all projects a user still owes a standup for."""
+    bullets = "\n".join(
+        f"• *{_format_project(p)}*" for p in sorted(pending_projects)
+    )
+    body = (
+        "Good morning! You have standups pending for these projects:\n"
+        f"{bullets}\n\nPlease submit one for each."
+    )
+    return _build_reminder_blocks("Daily Standup Reminder", body)
+
+
+def _build_project_nudge_blocks(project_key):
+    """Single-project follow-up reminder."""
+    label = _format_project(project_key)
+    body = (
+        f"You haven't submitted today's standup for *{label}* yet — "
+        "please submit it now."
+    )
+    return _build_reminder_blocks(f"Standup Reminder — {label}", body)
+
+
 def send_standup_reminder():
-    """Send a standup reminder, skipping people who already submitted and
-    escalating the copy for people who've already been pinged today."""
+    """Send standup reminders per project a user is active on.
+
+    First ping of the day = one digest DM listing all pending projects.
+    Later pings = one DM per still-pending project so each is harder to miss.
+    """
     print("[REMINDER] Sending standup reminders...")
     members = get_all_slack_members()
     print(f"[REMINDER] Found {len(members)} members: {[m['name'] for m in members]}")
@@ -756,48 +895,62 @@ def send_standup_reminder():
         print("[REMINDER] ERROR: No members found! Check SLACK_BOT_TOKEN and users:read scope.")
         return
 
+    user_projects = _get_user_projects_map(members)
+    if not user_projects:
+        print("[REMINDER] No active Jira assignments found across projects. Nothing to remind.")
+        return
+
     today_str = date.today().isoformat()
-    # Reset the per-day tracker if the calendar has rolled over.
     reminded = _reminded_today.setdefault(today_str, set())
-    submitted = _users_submitted_today()
+    submitted_pairs = _users_submitted_today()
 
-    morning_blocks = _build_reminder_blocks(
-        "Daily Standup Reminder",
-        "Good morning! Time to submit your daily standup.",
-    )
-    nudge_blocks = _build_reminder_blocks(
-        "Standup Reminder",
-        "You haven't submitted your standup yet today — please submit it now.",
-    )
-
-    sent = skipped_done = nudged = 0
+    digests_sent = nudges_sent = skipped_done = 0
     for member in members:
         uid = member["id"]
-        if uid in submitted:
+        projects = user_projects.get(uid, set())
+        if not projects:
+            continue
+
+        pending = {p for p in projects if (uid, p) not in submitted_pairs}
+        if not pending:
             skipped_done += 1
             continue
 
         first_time = uid not in reminded
-        blocks = morning_blocks if first_time else nudge_blocks
-        fallback = (
-            "Daily Standup Reminder — submit your standup"
-            if first_time
-            else "Standup reminder — you haven't submitted yet"
-        )
         try:
-            slack_client.chat_postMessage(channel=uid, text=fallback, blocks=blocks)
-            reminded.add(uid)
             if first_time:
-                sent += 1
+                pending_labels = [_format_project(p) for p in sorted(pending)]
+                slack_client.chat_postMessage(
+                    channel=uid,
+                    text=f"Daily Standup Reminder — pending: {', '.join(pending_labels)}",
+                    blocks=_build_digest_blocks(pending),
+                )
+                reminded.add(uid)
+                digests_sent += 1
+                print(
+                    f"[SUCCESS] Digest sent to {member['name']} "
+                    f"for {pending_labels}"
+                )
             else:
-                nudged += 1
-            print(f"[SUCCESS] {'First ping' if first_time else 'Follow-up'} sent to {member['name']}")
+                for project_key in sorted(pending):
+                    label = _format_project(project_key)
+                    slack_client.chat_postMessage(
+                        channel=uid,
+                        text=f"Standup reminder — {label} still pending",
+                        blocks=_build_project_nudge_blocks(project_key),
+                    )
+                    nudges_sent += 1
+                print(
+                    f"[SUCCESS] {len(pending)} per-project follow-ups sent "
+                    f"to {member['name']} for "
+                    f"{[_format_project(p) for p in sorted(pending)]}"
+                )
         except Exception as e:
             print(f"[WARNING] Could not remind {member['name']}: {e}")
 
     print(
-        f"[REMINDER] {sent} first-time, {nudged} follow-ups, "
-        f"{skipped_done} skipped (already submitted)"
+        f"[REMINDER] {digests_sent} digests, {nudges_sent} per-project follow-ups, "
+        f"{skipped_done} users already done"
     )
 
 
@@ -898,7 +1051,7 @@ def test_stale():
 # --- Scheduler ---
 scheduler = BackgroundScheduler()
 scheduler.add_job(check_for_proactive_blockers, "interval", days=1)
-scheduler.add_job(send_standup_reminder, "interval", days=1)
+scheduler.add_job(send_standup_reminder, "interval", minutes=2)  # TEMP: was days=1, set to 2 min for testing
 scheduler.add_job(check_missing_standups, "interval", days=1)
 # Keep the Jira project list warm so /standup never has to call Jira inline.
 scheduler.add_job(refresh_jira_projects_cache, "interval", minutes=5)

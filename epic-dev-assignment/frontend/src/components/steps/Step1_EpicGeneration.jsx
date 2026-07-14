@@ -1,7 +1,14 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { motion } from 'framer-motion';
 import { Zap, ChevronRight, Loader2 } from 'lucide-react';
+import {
+  MIN_DESCRIPTION_LENGTH,
+  MAX_DESCRIPTION_LENGTH,
+  validateDescription,
+  estimateEpicCount,
+  getQualityHint,
+} from '../../utils/descriptionValidator';
 
 const exampleProjects = [
   "Build a fitness tracking mobile application with workout logging, nutrition tracking, and progress analytics",
@@ -31,10 +38,27 @@ export default function Step1_EpicGeneration() {
   const [loading, setLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState('');
   const [error, setError] = useState(null);
+  const textareaRef = useRef(null);
+
+  const descriptionLength = projectDescription.length;
+  const validation = validateDescription(projectDescription);
+  const qualityHint = getQualityHint(projectDescription);
+  const estimatedEpics = estimateEpicCount(projectDescription);
+  const counterPct = descriptionLength / MAX_DESCRIPTION_LENGTH;
+  const counterColor =
+    counterPct >= 1 ? 'text-red-600'
+    : counterPct >= 0.9 ? 'text-amber-600'
+    : 'text-gray-400';
+  const hintDotColor =
+    qualityHint.tone === 'success' ? 'bg-teal-500'
+    : qualityHint.tone === 'warn' ? 'bg-amber-500'
+    : 'bg-gray-400';
 
   const handleGenerate = async () => {
-    if (!projectDescription.trim()) {
-      setError('Please enter a project description');
+    const v = validateDescription(projectDescription);
+    if (!v.ok) {
+      setError(v.error);
+      textareaRef.current?.focus();
       return;
     }
 
@@ -131,13 +155,41 @@ export default function Step1_EpicGeneration() {
             Project Description
           </label>
           <textarea
+            ref={textareaRef}
             value={projectDescription}
-            onChange={(e) => setProjectDescription(e.target.value)}
+            onChange={(e) => {
+              setProjectDescription(e.target.value);
+              if (error) setError(null);
+            }}
             placeholder="Build a modern task management application with real-time collaboration, notifications, and analytics..."
-            className="w-full h-40 resize-none rounded-xl border border-gray-200 bg-gray-50 text-gray-900 placeholder-gray-400 px-4 py-3 text-sm
-                       focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+            maxLength={MAX_DESCRIPTION_LENGTH}
+            aria-invalid={!!error}
+            className={`w-full h-40 resize-none rounded-xl border bg-gray-50 text-gray-900 placeholder-gray-400 px-4 py-3 text-sm
+                       focus:outline-none focus:ring-2 transition-all
+                       ${error
+                         ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500'
+                         : 'border-gray-200 focus:ring-teal-500/20 focus:border-teal-500'}`}
             disabled={loading}
           />
+          <div className="mt-2 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2 text-gray-500">
+              <span className={`inline-block w-1.5 h-1.5 rounded-full ${hintDotColor}`} aria-hidden="true" />
+              <span>{qualityHint.message}</span>
+            </div>
+            <span className={`font-mono ${counterColor}`}>
+              {descriptionLength} / {MAX_DESCRIPTION_LENGTH}
+            </span>
+          </div>
+          {error && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              role="alert"
+              className="mt-2 text-xs text-red-600"
+            >
+              {error}
+            </motion.p>
+          )}
         </div>
 
         {/* Examples */}
@@ -170,21 +222,10 @@ export default function Step1_EpicGeneration() {
           </motion.div>
         </div>
 
-        {/* Error */}
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="p-3 rounded-xl bg-red-50 border border-red-200"
-          >
-            <p className="text-red-600 text-sm">{error}</p>
-          </motion.div>
-        )}
-
         {/* Generate button */}
         <motion.button
           onClick={handleGenerate}
-          disabled={loading || !projectDescription.trim()}
+          disabled={loading || !validation.ok}
           className="w-full flex items-center justify-center gap-2 text-sm font-semibold
                      bg-teal-500 text-white rounded-xl px-6 py-3
                      hover:bg-teal-600 active:scale-[0.98] transition-all
@@ -200,6 +241,11 @@ export default function Step1_EpicGeneration() {
             <span className="flex items-center gap-2">
               <Zap className="w-4 h-4" />
               Generate Epics
+              {validation.ok && (
+                <span className="text-xs font-normal opacity-80">
+                  · ~{estimatedEpics} epic{estimatedEpics === 1 ? '' : 's'}
+                </span>
+              )}
             </span>
           )}
         </motion.button>
