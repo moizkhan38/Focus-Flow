@@ -5,3 +5,4 @@ slack-sdk>=3.26.0
 atlassian-python-api>=3.41.0
 google-genai>=1.0.0
 apscheduler>=3.10.0
+waitress>=3.0.0

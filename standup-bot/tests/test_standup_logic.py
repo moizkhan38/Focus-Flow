@@ -28,6 +28,8 @@ os.environ["JIRA_API_TOKEN"] = "dummy"
 os.environ["JIRA_PROJECT_KEY"] = "SCRUM"
 os.environ["EXPRESS_DB_URL"] = "http://127.0.0.1:9/api/db/standups"
 os.environ["SLACK_BOT_TOKEN"] = "xoxb-test-dummy"
+# Signing secret present so the module-level "refuse to start" guard is satisfied.
+os.environ["SLACK_SIGNING_SECRET"] = "dummy-signing-secret-for-tests"
 
 # 2) Neutralize the module-level scheduler before app import.
 from apscheduler.schedulers.background import BackgroundScheduler  # noqa: E402

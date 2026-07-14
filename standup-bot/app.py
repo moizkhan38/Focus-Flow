@@ -7,13 +7,60 @@ from datetime import datetime, date
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from slack_sdk import WebClient
+from slack_sdk.signature import SignatureVerifier
 from atlassian import Jira
 from google import genai
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 load_dotenv()
 
+# Resolve the data file relative to this script, not the process CWD.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STANDUP_JSON_PATH = os.path.join(BASE_DIR, "standup_data.json")
+
+# --- Security / runtime config ---
+SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
+INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "")   # gates /api/standup* (Express → bot)
+ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")         # gates /test/* (hidden unless set)
+FLASK_DEBUG = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+REMINDER_HOUR = int(os.environ.get("REMINDER_HOUR", "9"))
+REMINDER_MINUTE = int(os.environ.get("REMINDER_MINUTE", "30"))
+
+# Slack request signature verification. Without the signing secret anyone who can
+# reach the endpoint could forge Slack requests, so refuse to start in production.
+signature_verifier = SignatureVerifier(SLACK_SIGNING_SECRET) if SLACK_SIGNING_SECRET else None
+if not SLACK_SIGNING_SECRET and not FLASK_DEBUG:
+    raise SystemExit(
+        "[FATAL] SLACK_SIGNING_SECRET is required. Set it (see .env.example), or set "
+        "FLASK_DEBUG=true for local dev. Refusing to start without Slack request verification."
+    )
+
 app = Flask(__name__)
+
+
+@app.before_request
+def _gate_requests():
+    path = request.path
+    # Slack endpoints: prove the request genuinely came from Slack.
+    if path.startswith("/slack/"):
+        if signature_verifier is None:
+            return None  # dev only — prod refuses to start without the secret
+        if not signature_verifier.is_valid_request(request.get_data(), dict(request.headers)):
+            return jsonify({"error": "invalid Slack signature"}), 401
+        return None
+    # Internal server-to-server endpoints (Express → bot). No-op when key unset (dev).
+    if path == "/api/standup" or path.startswith("/api/standup/"):
+        if INTERNAL_API_KEY and request.headers.get("X-Internal-Key") != INTERNAL_API_KEY:
+            return jsonify({"error": "unauthorized"}), 401
+        return None
+    # Test/admin endpoints: hidden (404) unless an admin key is set AND matches.
+    if path.startswith("/test/"):
+        if not ADMIN_API_KEY or request.headers.get("X-Admin-Key") != ADMIN_API_KEY:
+            return jsonify({"error": "not found"}), 404
+        return None
+    return None
+
 
 # Initialize Clients
 slack_client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
@@ -228,12 +275,12 @@ def save_standup_to_json(user_id, project_key, yesterday, today, blocker, analys
     # Fallback: append to local JSON so data isn't lost if Express/DB is down
     try:
         try:
-            with open("standup_data.json", "r") as f:
+            with open(STANDUP_JSON_PATH, "r") as f:
                 standup_data = json.load(f)
         except FileNotFoundError:
             standup_data = []
         standup_data.append(new_entry)
-        with open("standup_data.json", "w") as f:
+        with open(STANDUP_JSON_PATH, "w") as f:
             json.dump(standup_data, f, indent=4)
         print(f"[FALLBACK] Saved standup to JSON for {user_id}")
         return new_entry
@@ -556,7 +603,13 @@ def _build_reminder_blocks(headline, body):
 @app.route("/slack/events", methods=["POST"])
 def interactions():
     """Handle Slack interactive events: modal submissions and button clicks."""
-    payload = json.loads(request.form.get("payload"))
+    raw_payload = request.form.get("payload")
+    if not raw_payload:
+        return jsonify({"error": "missing payload"}), 400
+    try:
+        payload = json.loads(raw_payload)
+    except (ValueError, TypeError):
+        return jsonify({"error": "invalid payload"}), 400
     payload_type = payload.get("type")
 
     # Modal submission — process the standup
@@ -639,7 +692,7 @@ def _load_standups_from_db(project_key=None):
 
 def _load_standups_from_json(project_key=None):
     try:
-        with open("standup_data.json", "r") as f:
+        with open(STANDUP_JSON_PATH, "r") as f:
             data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         data = []
@@ -1051,7 +1104,8 @@ def test_stale():
 # --- Scheduler ---
 scheduler = BackgroundScheduler()
 scheduler.add_job(check_for_proactive_blockers, "interval", days=1)
-scheduler.add_job(send_standup_reminder, "interval", minutes=2)  # TEMP: was days=1, set to 2 min for testing
+# Daily standup reminder at REMINDER_HOUR:REMINDER_MINUTE (default 09:30).
+scheduler.add_job(send_standup_reminder, CronTrigger(hour=REMINDER_HOUR, minute=REMINDER_MINUTE))
 scheduler.add_job(check_missing_standups, "interval", days=1)
 # Keep the Jira project list warm so /standup never has to call Jira inline.
 scheduler.add_job(refresh_jira_projects_cache, "interval", minutes=5)
@@ -1061,4 +1115,9 @@ scheduler.start()
 background_executor.submit(refresh_jira_projects_cache)
 
 if __name__ == "__main__":
-    app.run(port=3000)
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "3000"))
+    print(f"Standup bot dev server: http://{host}:{port}")
+    print("For production, run behind a real WSGI server, e.g.:")
+    print(f"  waitress-serve --host={host} --port={port} --threads=8 app:app")
+    app.run(host=host, port=port)
