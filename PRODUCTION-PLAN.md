@@ -136,7 +136,7 @@ Standup bot :3000 (Slack signature verified, internal-key to Express, daily remi
 - `git grep -InE "ghp_[A-Za-z0-9]{20,}|ATATT[A-Za-z0-9_-]{20,}|xoxb-[0-9]|AIza[A-Za-z0-9_-]{10,}" -- ':!*.md'` → no matches in tracked files.
 - User confirmation recorded in Execution Log.
 
-### Step 0.2 — db.js: remove hardcoded credential, fail fast, SSL support `[ ]`
+### Step 0.2 — db.js: remove hardcoded credential, fail fast, SSL support `[x]`
 **Size:** S · **Owner:** Opus
 **Why:** A2, A10. `db.js:5-6` falls back to a credentialed connection string (real password, in git history).
 **Files:** `epic-dev-assignment/backend/db.js`, `backend/.env.example`
@@ -609,6 +609,7 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 |---|---|---|---|
 | 2026-07-14 | 0.0 | `p0.0: description validation across all 3 layers + standup ticket extraction safety net` | Executed by Fable while establishing the regression baseline (build + py_compile green first) |
 | 2026-07-14 | harness | `test: regression baseline — 74 unit tests + smoke harness across all 4 services` | Also fixed missing `python-dotenv` in epic-generator/requirements.txt; created standup-bot/.venv |
+| 2026-07-14 | 0.2 | `p0.2: remove hardcoded DB password from db.js; fail-fast + DATABASE_SSL` | Both scripts already load dotenv; db.js intentionally does NOT self-load it (keeps fail-fast verifiable). Note: old password remains in git history (commit cdd635f) — Step 0.1 rotation still required. |
 
 # Verification Log (Fable appends; newest last)
 | Date | Step | Result | Evidence |

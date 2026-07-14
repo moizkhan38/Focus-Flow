@@ -2,11 +2,24 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-const connectionString = process.env.DATABASE_URL
-  || 'postgresql://postgres:moizdanishmand25@localhost:5432/focusflow';
+// No hardcoded fallback: silently connecting to a wrong/local DB is worse than
+// failing loudly, and a real credential must never live in source (or git history).
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error(
+    '[DB] FATAL: DATABASE_URL is not set — refusing to start.\n' +
+    '     Configure it in backend/.env (see .env.example).'
+  );
+  process.exit(1);
+}
+
+// Managed Postgres (RDS, Supabase, Neon, Heroku, Azure) requires TLS and
+// usually presents a self-signed chain. Enable with DATABASE_SSL=true.
+const ssl = process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined;
 
 export const pool = new Pool({
   connectionString,
+  ssl,
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
