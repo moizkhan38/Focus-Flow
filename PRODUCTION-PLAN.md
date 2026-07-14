@@ -184,7 +184,7 @@ Standup bot :3000 (Slack signature verified, internal-key to Express, daily remi
 - grep: no `minutes=2`, `SignatureVerifier` present, `/test/` handlers check admin key.
 - `curl -s -o /dev/null -w "%{http_code}" -X POST localhost:3000/slack/events -d "payload={}"` → `401`; `curl .../test/reminder` → `404` (no key set) — run with bot started locally.
 
-### Step 0.5 — Express server hardening `[ ]`
+### Step 0.5 — Express server hardening `[x]`
 **Size:** M · **Owner:** Opus
 **Why:** A8, A10. No global error handler, no process guards, `trust proxy` unset, 50 MB body limit, CORS callback throws 500s, no graceful shutdown, cron double-fires on multi-instance.
 **Files:** `epic-dev-assignment/backend/server.js`, `backend/.env.example`
@@ -613,6 +613,7 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-14 | 0.1 | (user action — .env only, no commit) | User rotated all 5. Each verified live: Postgres (backend connects), GitHub PAT (200, `repo` scope, user moizkhan38), Jira token (200 /myself, both backend + bot .env), Gemini key (200 models list, both epic-generator + bot .env), Slack bot token (auth.test ok, team "Focus Flow") + signing secret (32-char). **FOLLOW-UP:** the GitHub token was briefly pasted in chat during setup — regenerate it once and update backend/.env so it has never left the machine. |
 | 2026-07-14 | 0.3 | `p0.3: harden Flask — debug off, CORS lock, internal-key gate, waitress` | app.run env-driven (FLASK_DEBUG/HOST/PORT, defaults false/127.0.0.1/5000); dropped API-key debug print; CORS→CORS_ORIGINS; before_request X-Internal-Key gate (health exempt); 500s return generic msg + log; waitress in requirements; flaskProxy.js sends X-Internal-Key. jira.js:42 unchanged (hits exempt /api/health). |
 | 2026-07-14 | 0.4 | `p0.4: harden standup bot — Slack sig verify, daily reminder, gate /test + /api/standup` | before_request gates: /slack/* Slack signature (refuse-to-start w/o secret unless FLASK_DEBUG), /api/standup* X-Internal-Key (dev no-op), /test/* X-Admin-Key→404 unless set; reminder 2min→daily CronTrigger(REMINDER_HOUR/MINUTE); /slack/events payload parse guarded; app.run env HOST/PORT + waitress; standup_data.json path via __file__. Express routes/standup.js sends X-Internal-Key. Test sets dummy SLACK_SIGNING_SECRET. |
+| 2026-07-14 | 0.5 | `p0.5: harden Express — trust proxy, rate limit, error handler, guards, cron lock` | trust proxy (TRUST_PROXY); body limit 50mb→JSON_BODY_LIMIT(2mb); global /api rate limit (RATE_LIMIT_MAX 300/15m, health registered before it); CORS disallowed→cb(null,false); global error middleware (expose-gated); unhandledRejection/uncaughtException guards; SIGTERM/SIGINT graceful shutdown (io.close+pool.end, 10s force); dev-refresh cron wrapped in pg_try_advisory_lock(823471). .env.example +TRUST_PROXY/JSON_BODY_LIMIT/RATE_LIMIT_MAX. |
 
 # Verification Log (Fable appends; newest last)
 | Date | Step | Result | Evidence |
@@ -622,3 +623,4 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-14 | 0.1 | ✓ | All 5 credentials authenticated against their live APIs (Postgres/GitHub/Jira/Gemini/Slack); `git log --all -- **/.env` empty; `git grep` of secret patterns in tracked files clean |
 | 2026-07-14 | 0.3 | ✓ | Flask boots debug=False on 127.0.0.1; gate with INTERNAL_API_KEY=testkey123 → POST /api/generate no key=401, GET /api/health no key=200, POST with key=400(validation); no `debug=True`/key-logging in source; waitress 3.0.2 importable; Flask units 21/21 |
 | 2026-07-14 | 0.4 | ✓ | Bot boots on 127.0.0.1:3000; forged POST /slack/events=401, GET /test/reminder (no admin key)=404, /api/health=200, /api/standup/history=200; grep: no minutes=2, SignatureVerifier + CronTrigger present; bot units 9/9; waitress installed |
+| 2026-07-14 | 0.5 | ✓ | node --check OK; all 9 hardening elements present; GET /api/health=200; hostile Origin → no ACAO header, status 200 (not 500); rate limit exact: 305 reqs → 300×404 + 5×429; backend units 26/26. (SIGTERM handler present + valid; runtime signal behavior deferred to Linux containers in Phase 3.) |
