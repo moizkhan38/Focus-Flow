@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendUpstreamError } from '../utils/httpError.js';
 import { emitToProject } from '../io.js';
 import {
   getBoards,
@@ -25,7 +26,7 @@ router.get('/jira/test', async (req, res) => {
     const user = await testConnection();
     res.json({ ok: true, user: { name: user.displayName, email: user.emailAddress } });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    sendUpstreamError(res, err, { extra: { ok: false } });
   }
 });
 
@@ -50,7 +51,7 @@ router.get('/jira/boards', async (req, res) => {
     const boards = await getBoards();
     res.json(boards);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendUpstreamError(res, err);
   }
 });
 
@@ -60,7 +61,7 @@ router.get('/jira/sprints', async (req, res) => {
     const sprints = await getSprints(boardId);
     res.json(sprints);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendUpstreamError(res, err);
   }
 });
 
@@ -69,7 +70,7 @@ router.get('/jira/sprint/:sprintId', async (req, res) => {
     const sprint = await getSprintDetails(req.params.sprintId);
     res.json(sprint);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendUpstreamError(res, err);
   }
 });
 
@@ -78,7 +79,7 @@ router.get('/jira/sprint/:sprintId/issues', async (req, res) => {
     const issues = await getSprintIssues(req.params.sprintId);
     res.json(issues);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendUpstreamError(res, err);
   }
 });
 
@@ -111,7 +112,7 @@ router.get('/jira/sprint/:sprintId/burndown', async (req, res) => {
       res.json(data);
     }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendUpstreamError(res, err);
   }
 });
 
@@ -120,7 +121,7 @@ router.get('/jira/project/:projectKey/issues', async (req, res) => {
     const issues = await getProjectIssues(req.params.projectKey);
     res.json(issues);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendUpstreamError(res, err);
   }
 });
 
@@ -129,7 +130,7 @@ router.get('/jira/issue/:issueKey', async (req, res) => {
     const transitions = await getIssueTransitions(req.params.issueKey);
     res.json({ transitions });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendUpstreamError(res, err);
   }
 });
 
@@ -143,7 +144,7 @@ router.put('/jira/issue/:issueKey', async (req, res) => {
     emitToProject(projectKey, 'issue:changed', { key: req.params.issueKey });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendUpstreamError(res, err);
   }
 });
 
@@ -164,7 +165,7 @@ router.put('/jira/issue/:issueKey/assign', async (req, res) => {
     emitToProject(projectKey, 'issue:changed', { key: req.params.issueKey });
     res.json({ ok: true, assignee: { name: users[0].displayName, accountId: users[0].accountId } });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendUpstreamError(res, err);
   }
 });
 
@@ -175,7 +176,7 @@ router.get('/jira/board/:boardId/sprints', async (req, res) => {
     const sprints = await getSprints(req.params.boardId);
     res.json(sprints);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendUpstreamError(res, err);
   }
 });
 
@@ -283,7 +284,7 @@ router.post('/jira/sprint/:sprintId/complete', async (req, res) => {
     });
   } catch (err) {
     console.error('[Complete] Sprint completion failed:', err.message);
-    res.status(500).json({ error: err.message });
+    sendUpstreamError(res, err);
   }
 });
 

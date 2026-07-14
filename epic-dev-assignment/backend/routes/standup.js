@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendServerError } from '../utils/httpError.js';
 
 const router = express.Router();
 const FOCUS_FLOW_URL = process.env.FOCUS_FLOW_URL || 'http://localhost:3000';
@@ -22,7 +23,7 @@ router.post('/standup', async (req, res) => {
     return res.status(response.status).json({ success: response.ok, ...data });
   } catch (error) {
     console.error('Error proxying standup request:', error);
-    return res.status(500).json({ success: false, error: error.message || 'Standup proxy failed' });
+    return sendServerError(res, error, 'Standup proxy failed');
   }
 });
 

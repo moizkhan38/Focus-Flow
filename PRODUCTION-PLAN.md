@@ -204,7 +204,7 @@ Standup bot :3000 (Slack signature verified, internal-key to Express, daily remi
 - Start server; `for i in $(seq 1 320); do curl -s -o /dev/null localhost:3003/api/health; done` then one more → observe 429 (or confirm limiter excludes /api/health if implemented that way — limiter must cover `/api/db/*` at minimum).
 - `curl -s -H "Origin: https://evil.example" -i localhost:3003/api/health | head -5` → no `Access-Control-Allow-Origin` header, status not 500.
 
-### Step 0.6 — Stop leaking internal error details (sweep) `[ ]`
+### Step 0.6 — Stop leaking internal error details (sweep) `[x]`
 **Size:** M · **Owner:** Opus
 **Why:** A8. ~30 catch blocks return raw `err.message` (Postgres constraint names, driver errors) to clients.
 **Files:** `backend/routes/db.js`, `routes/jira.js`, `routes/sync.js`, `routes/epics.js`, `routes/developers.js`, `routes/assignment.js`, `routes/standup.js`
@@ -614,6 +614,7 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-14 | 0.3 | `p0.3: harden Flask — debug off, CORS lock, internal-key gate, waitress` | app.run env-driven (FLASK_DEBUG/HOST/PORT, defaults false/127.0.0.1/5000); dropped API-key debug print; CORS→CORS_ORIGINS; before_request X-Internal-Key gate (health exempt); 500s return generic msg + log; waitress in requirements; flaskProxy.js sends X-Internal-Key. jira.js:42 unchanged (hits exempt /api/health). |
 | 2026-07-14 | 0.4 | `p0.4: harden standup bot — Slack sig verify, daily reminder, gate /test + /api/standup` | before_request gates: /slack/* Slack signature (refuse-to-start w/o secret unless FLASK_DEBUG), /api/standup* X-Internal-Key (dev no-op), /test/* X-Admin-Key→404 unless set; reminder 2min→daily CronTrigger(REMINDER_HOUR/MINUTE); /slack/events payload parse guarded; app.run env HOST/PORT + waitress; standup_data.json path via __file__. Express routes/standup.js sends X-Internal-Key. Test sets dummy SLACK_SIGNING_SECRET. |
 | 2026-07-14 | 0.5 | `p0.5: harden Express — trust proxy, rate limit, error handler, guards, cron lock` | trust proxy (TRUST_PROXY); body limit 50mb→JSON_BODY_LIMIT(2mb); global /api rate limit (RATE_LIMIT_MAX 300/15m, health registered before it); CORS disallowed→cb(null,false); global error middleware (expose-gated); unhandledRejection/uncaughtException guards; SIGTERM/SIGINT graceful shutdown (io.close+pool.end, 10s force); dev-refresh cron wrapped in pg_try_advisory_lock(823471). .env.example +TRUST_PROXY/JSON_BODY_LIMIT/RATE_LIMIT_MAX. |
+| 2026-07-14 | 0.6 | `p0.6: stop leaking internal errors — sendServerError/sendUpstreamError sweep` | New utils/httpError.js: sendServerError (internal → generic + log) and sendUpstreamError (Jira parseJiraError output → safe passthrough, still logged). Swept 34 sites across db/jira/sync/assignment/epics/developers/standup. Kept: Jira warnings[]/health feedback + server logs + developers.js filtered per-user error (never sent). |
 
 # Verification Log (Fable appends; newest last)
 | Date | Step | Result | Evidence |
@@ -624,3 +625,4 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-14 | 0.3 | ✓ | Flask boots debug=False on 127.0.0.1; gate with INTERNAL_API_KEY=testkey123 → POST /api/generate no key=401, GET /api/health no key=200, POST with key=400(validation); no `debug=True`/key-logging in source; waitress 3.0.2 importable; Flask units 21/21 |
 | 2026-07-14 | 0.4 | ✓ | Bot boots on 127.0.0.1:3000; forged POST /slack/events=401, GET /test/reminder (no admin key)=404, /api/health=200, /api/standup/history=200; grep: no minutes=2, SignatureVerifier + CronTrigger present; bot units 9/9; waitress installed |
 | 2026-07-14 | 0.5 | ✓ | node --check OK; all 9 hardening elements present; GET /api/health=200; hostile Origin → no ACAO header, status 200 (not 500); rate limit exact: 305 reqs → 300×404 + 5×429; backend units 26/26. (SIGTERM handler present + valid; runtime signal behavior deferred to Linux containers in Phase 3.) |
+| 2026-07-14 | 0.6 | ✓ | All 7 routes + helper node --check OK; grep confirms zero err.message on any status(500) line; good-DB smoke green (db CRUD + validation, 19 PASS); forced 500 (bad DB pw) → client gets `{"error":"Internal server error"}`, server log holds real `password authentication failed`. |

@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendServerError } from '../utils/httpError.js';
 import { autoAssignStories, reassignStory } from '../services/assignmentService.js';
 
 const router = express.Router();
@@ -25,7 +26,7 @@ router.post('/auto-assign', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error auto-assigning stories:', error);
-    res.status(500).json({ success: false, error: error.message || 'Failed to auto-assign stories' });
+    sendServerError(res, error, 'Failed to auto-assign stories');
   }
 });
 
@@ -74,7 +75,7 @@ router.post('/reassign', async (req, res) => {
     });
   } catch (error) {
     console.error('Error reassigning story:', error);
-    res.status(500).json({ success: false, error: error.message || 'Failed to reassign story' });
+    sendServerError(res, error, 'Failed to reassign story');
   }
 });
 

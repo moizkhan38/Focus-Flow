@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendUpstreamError } from '../utils/httpError.js';
 import {
   createEpic, createStory, createSprint, startSprint, moveIssueToSprint,
   assignIssue, updateStoryPoints, searchUser, searchAssignableUser,
@@ -571,7 +572,7 @@ router.post('/ai/sync-jira', async (req, res) => {
     });
   } catch (err) {
     console.error('[Sync] Error:', err);
-    res.status(500).json({ error: err.message });
+    sendUpstreamError(res, err);
   }
 });
 

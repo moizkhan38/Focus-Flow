@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendServerError } from '../utils/httpError.js';
 import { query, ping } from '../db.js';
 import { refreshAllDevelopers } from '../services/developerRefresher.js';
 
@@ -35,7 +36,7 @@ router.post('/db/standups', async (req, res) => {
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err);
   }
 });
 
@@ -55,7 +56,7 @@ router.get('/db/standups', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err);
   }
 });
 
@@ -77,7 +78,7 @@ router.post('/db/retrospectives', async (req, res) => {
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err);
   }
 });
 
@@ -95,7 +96,7 @@ router.get('/db/retrospectives', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err);
   }
 });
 
@@ -132,7 +133,7 @@ router.post('/db/projects', async (req, res) => {
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err);
   }
 });
 
@@ -141,7 +142,7 @@ router.get('/db/projects', async (_req, res) => {
     const result = await query(`SELECT * FROM projects ORDER BY created_at DESC`);
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err);
   }
 });
 
@@ -151,7 +152,7 @@ router.get('/db/projects/:id', async (req, res) => {
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err);
   }
 });
 
@@ -160,7 +161,7 @@ router.delete('/db/projects/:id', async (req, res) => {
     await query(`DELETE FROM projects WHERE id = $1`, [req.params.id]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err);
   }
 });
 
@@ -193,7 +194,7 @@ router.post('/db/developers', async (req, res) => {
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err);
   }
 });
 
@@ -202,7 +203,7 @@ router.get('/db/developers', async (_req, res) => {
     const result = await query(`SELECT * FROM developers ORDER BY added_at DESC`);
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err);
   }
 });
 
@@ -211,7 +212,7 @@ router.delete('/db/developers/:username', async (req, res) => {
     await query(`DELETE FROM developers WHERE username = $1`, [req.params.username]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err);
   }
 });
 
@@ -224,7 +225,7 @@ router.post('/db/developers/refresh', async (_req, res) => {
     const { rows } = await query(`SELECT * FROM developers ORDER BY username`);
     res.json({ ...summary, developers: rows });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err);
   }
 });
 
@@ -250,7 +251,7 @@ router.post('/db/assignments/bulk', async (req, res) => {
     }
     res.status(201).json({ ok: true, count: assignments.length });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err);
   }
 });
 
@@ -268,7 +269,7 @@ router.get('/db/assignments', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, err);
   }
 });
 

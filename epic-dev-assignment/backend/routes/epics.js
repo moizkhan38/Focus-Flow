@@ -2,6 +2,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { generateEpics, regenerateComponent } from '../services/flaskProxy.js';
 import { classifyEpics } from '../services/epicClassifier.js';
+import { sendServerError } from '../utils/httpError.js';
 
 const router = express.Router();
 
@@ -97,11 +98,7 @@ router.post('/generate', aiLimiter, async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error('Error generating epics:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to generate epics'
-    });
+    sendServerError(res, error, 'Failed to generate epics');
   }
 });
 
@@ -127,11 +124,7 @@ router.post('/regenerate', aiLimiter, async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error('Error regenerating component:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to regenerate component'
-    });
+    sendServerError(res, error, 'Failed to regenerate component');
   }
 });
 
@@ -154,11 +147,7 @@ router.post('/classify-epics', async (req, res) => {
       classifications
     });
   } catch (error) {
-    console.error('Error classifying epics:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to classify epics'
-    });
+    sendServerError(res, error, 'Failed to classify epics');
   }
 });
 

@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendServerError } from '../utils/httpError.js';
 import { analyzeDeveloper } from '../services/githubService.js';
 import { query } from '../db.js';
 
@@ -90,11 +91,7 @@ router.post('/analyze-developers', async (req, res) => {
       developers: devs
     });
   } catch (error) {
-    console.error('Error analyzing developers:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to analyze developers'
-    });
+    sendServerError(res, error, 'Failed to analyze developers');
   }
 });
 
