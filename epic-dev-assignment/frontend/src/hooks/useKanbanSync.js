@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { apiFetch } from '../lib/api.js';
 import { useSprintIssues, useProjectIssues } from './useSprintData';
 import { useRealtimeProject } from './useRealtime';
 
@@ -150,7 +151,7 @@ export function useKanbanSync(projectKey, sprintId) {
     setSyncingKey(issueKey);
 
     try {
-      const res = await fetch(`/api/jira/issue/${issueKey}`);
+      const res = await apiFetch(`/api/jira/issue/${issueKey}`);
       if (!res.ok) throw new Error(`Failed to fetch transitions for ${issueKey}`);
       const { transitions } = await res.json();
 
@@ -159,7 +160,7 @@ export function useKanbanSync(projectKey, sprintId) {
         throw new Error(`No matching Jira transition to "${targetColumn}" found`);
       }
 
-      const putRes = await fetch(`/api/jira/issue/${issueKey}`, {
+      const putRes = await apiFetch(`/api/jira/issue/${issueKey}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transitionId: transition.id }),

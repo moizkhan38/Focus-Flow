@@ -1,7 +1,8 @@
 import useSWR from 'swr';
+import { apiFetch } from '../lib/api.js';
 
 async function fetcher(url) {
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `Request failed: ${res.status}`);

@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
+import { apiFetch } from '../../lib/api.js';
 import { useProjects } from '../../hooks/useProjects';
 import { useDevelopers } from '../../hooks/useDevelopers';
 import { Link } from 'react-router-dom';
@@ -151,7 +152,7 @@ export default function Dashboard() {
     setStandupError(null);
     try {
       const query = standupProjectFilter ? `?project_key=${standupProjectFilter}` : '';
-      const res = await fetch(`/api/standup/history${query}`);
+      const res = await apiFetch(`/api/standup/history${query}`);
       const data = await res.json();
       if (data.success) {
         setStandups(data.standups || []);

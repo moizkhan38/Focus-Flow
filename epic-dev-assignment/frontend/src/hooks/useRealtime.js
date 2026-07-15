@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { SOCKET_URL } from '../lib/api.js';
 import { io } from 'socket.io-client';
 
 // Singleton socket — shared across all components so we don't open N connections.
@@ -6,7 +7,7 @@ let socket = null;
 function getSocket() {
   if (!socket) {
     // In dev, Vite proxies the HTTP API but NOT websockets. Connect directly to :3003.
-    socket = io('http://localhost:3003', { transports: ['websocket'], autoConnect: true });
+    socket = io(SOCKET_URL, { transports: ['websocket'], autoConnect: true });
   }
   return socket;
 }

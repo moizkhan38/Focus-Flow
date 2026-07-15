@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../../lib/api.js';
 import { useNavigate } from 'react-router-dom';
 import { WorkflowProvider, useWorkflow } from '../../context/WorkflowContext';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -207,7 +208,7 @@ function WizardContent() {
     );
 
     try {
-      const res = await fetch('/api/ai/sync-jira', {
+      const res = await apiFetch('/api/ai/sync-jira', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

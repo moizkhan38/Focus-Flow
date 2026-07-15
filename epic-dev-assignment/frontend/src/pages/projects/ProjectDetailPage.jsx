@@ -1,4 +1,5 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { apiFetch } from '../../lib/api.js';
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useProjects } from '../../hooks/useProjects';
 import { useSprintIssues, useProjectIssues, useBurndownData, useSprintDetails } from '../../hooks/useSprintData';
@@ -1101,7 +1102,7 @@ function SyncedProjectView({ project }) {
                     setAssigningKey(task.key);
                     setAssignError(null);
                     try {
-                      const res = await fetch(`/api/jira/issue/${task.key}/assign`, {
+                      const res = await apiFetch(`/api/jira/issue/${task.key}/assign`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ jiraQuery: jiraUsername }),
@@ -1175,7 +1176,7 @@ function ProjectStandupReports({ projectKey }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/standup/history?project_key=${projectKey}`);
+      const res = await apiFetch(`/api/standup/history?project_key=${projectKey}`);
       const data = await res.json();
       if (data.success) setStandups(data.standups || []);
       else setError(data.error || 'Failed to load');

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { apiFetch } from '../../lib/api.js';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { motion } from 'framer-motion';
 import { Zap, ChevronRight, Loader2 } from 'lucide-react';
@@ -78,7 +79,7 @@ export default function Step1_EpicGeneration() {
     );
 
     try {
-      const response = await fetch('/api/generate', {
+      const response = await apiFetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description: projectDescription })

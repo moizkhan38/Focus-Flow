@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { apiFetch } from '../../lib/api.js';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useDevelopers } from '../../hooks/useDevelopers';
 import { useProjects } from '../../hooks/useProjects';
@@ -190,7 +191,7 @@ export default function Step3_DeveloperAnalysis() {
     );
 
     try {
-      const response = await fetch('/api/analyze-developers', {
+      const response = await apiFetch('/api/analyze-developers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ developers: toAnalyze })

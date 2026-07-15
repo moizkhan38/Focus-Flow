@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { apiFetch } from '../lib/api.js';
 
 export function useSprintCompletion({ issues, sprint, project }) {
   const [showCompletionModal, setShowCompletionModal] = useState(false);
@@ -24,7 +25,7 @@ export function useSprintCompletion({ issues, sprint, project }) {
     setCompleting(true);
     setCompletionError(null);
     try {
-      const res = await fetch(`/api/jira/sprint/${project.jiraSprintId}/complete`, {
+      const res = await apiFetch(`/api/jira/sprint/${project.jiraSprintId}/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ boardId: project.jiraBoardId }),

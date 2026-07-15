@@ -215,7 +215,7 @@ Standup bot :3000 (Slack signature verified, internal-key to Express, daily remi
 **Accept:** `git grep -n "err.message" backend/routes | grep 500` → no 500-path leaks remain.
 **Verify (Fable):** grep as above; stop Postgres (or set bad `DATABASE_URL`), `curl localhost:3003/api/db/projects` → body is generic `Internal server error`, no pg details; server log has the real error.
 
-### Step 0.7 — Frontend: env-driven API base + socket URL `[ ]`
+### Step 0.7 — Frontend: env-driven API base + socket URL `[x]`
 **Size:** M · **Owner:** Opus
 **Why:** A5. Production build cannot reach any backend today: relative `/api/*` only works under the dev proxy; socket hardcodes `http://localhost:3003`.
 **Files:** new `frontend/src/lib/api.js`, `frontend/src/hooks/useRealtime.js`, every fetch call site, new `frontend/.env.example`
@@ -615,6 +615,7 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-14 | 0.4 | `p0.4: harden standup bot — Slack sig verify, daily reminder, gate /test + /api/standup` | before_request gates: /slack/* Slack signature (refuse-to-start w/o secret unless FLASK_DEBUG), /api/standup* X-Internal-Key (dev no-op), /test/* X-Admin-Key→404 unless set; reminder 2min→daily CronTrigger(REMINDER_HOUR/MINUTE); /slack/events payload parse guarded; app.run env HOST/PORT + waitress; standup_data.json path via __file__. Express routes/standup.js sends X-Internal-Key. Test sets dummy SLACK_SIGNING_SECRET. |
 | 2026-07-14 | 0.5 | `p0.5: harden Express — trust proxy, rate limit, error handler, guards, cron lock` | trust proxy (TRUST_PROXY); body limit 50mb→JSON_BODY_LIMIT(2mb); global /api rate limit (RATE_LIMIT_MAX 300/15m, health registered before it); CORS disallowed→cb(null,false); global error middleware (expose-gated); unhandledRejection/uncaughtException guards; SIGTERM/SIGINT graceful shutdown (io.close+pool.end, 10s force); dev-refresh cron wrapped in pg_try_advisory_lock(823471). .env.example +TRUST_PROXY/JSON_BODY_LIMIT/RATE_LIMIT_MAX. |
 | 2026-07-14 | 0.6 | `p0.6: stop leaking internal errors — sendServerError/sendUpstreamError sweep` | New utils/httpError.js: sendServerError (internal → generic + log) and sendUpstreamError (Jira parseJiraError output → safe passthrough, still logged). Swept 34 sites across db/jira/sync/assignment/epics/developers/standup. Kept: Jira warnings[]/health feedback + server logs + developers.js filtered per-user error (never sent). |
+| 2026-07-15 | 0.7 | `p0.7: frontend env-driven API base + socket URL (VITE_API_URL)` | New src/lib/api.js (API_BASE, SOCKET_URL, apiUrl, apiFetch). Swept 16 direct fetch('/api') sites across 11 files + safeFetchJson wrapper (WorkflowContext ×4) + SWR fetcher (useSprintData) to apiFetch; useRealtime io()→SOCKET_URL. New frontend/.env.example (VITE_API_URL / VITE_SOCKET_URL, public-only note). Dev unchanged (empty API_BASE → Vite proxy). |
 
 # Verification Log (Fable appends; newest last)
 | Date | Step | Result | Evidence |
@@ -626,3 +627,4 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-14 | 0.4 | ✓ | Bot boots on 127.0.0.1:3000; forged POST /slack/events=401, GET /test/reminder (no admin key)=404, /api/health=200, /api/standup/history=200; grep: no minutes=2, SignatureVerifier + CronTrigger present; bot units 9/9; waitress installed |
 | 2026-07-14 | 0.5 | ✓ | node --check OK; all 9 hardening elements present; GET /api/health=200; hostile Origin → no ACAO header, status 200 (not 500); rate limit exact: 305 reqs → 300×404 + 5×429; backend units 26/26. (SIGTERM handler present + valid; runtime signal behavior deferred to Linux containers in Phase 3.) |
 | 2026-07-14 | 0.6 | ✓ | All 7 routes + helper node --check OK; grep confirms zero err.message on any status(500) line; good-DB smoke green (db CRUD + validation, 19 PASS); forced 500 (bad DB pw) → client gets `{"error":"Internal server error"}`, server log holds real `password authentication failed`. |
+| 2026-07-15 | 0.7 | ✓ | `npm run build` OK (9.9s); grep: no direct fetch('/api') outside lib/api.js; **zero `localhost:3003` in dist/assets/*.js** (DEV fallback tree-shaken); no localhost refs anywhere in bundle. Full wizard-through-apiFetch dev smoke deferred to G0. |

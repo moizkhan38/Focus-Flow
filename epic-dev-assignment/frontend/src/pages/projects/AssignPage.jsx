@@ -1,4 +1,5 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { apiFetch } from '../../lib/api.js';
 import { useEffect, useState, useMemo } from 'react';
 import { useProjects } from '../../hooks/useProjects';
 import { useDevelopers } from '../../hooks/useDevelopers';
@@ -103,7 +104,7 @@ export default function AssignPage() {
     setIsAnalyzing(true);
     setError('');
     try {
-      const res = await fetch('/api/analyze-developers', {
+      const res = await apiFetch('/api/analyze-developers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ github_usernames: usernames }),
@@ -149,7 +150,7 @@ export default function AssignPage() {
         })),
       }));
 
-      const res = await fetch('/api/auto-assign', {
+      const res = await apiFetch('/api/auto-assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ epics: epicPayload, developers: selectedDevs }),
@@ -184,7 +185,7 @@ export default function AssignPage() {
     try {
       if (!newDeveloperLogin) return;
       setReassigningStoryId(storyId);
-      const res = await fetch('/api/reassign', {
+      const res = await apiFetch('/api/reassign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ story_id: storyId, new_developer: newDeveloperLogin, developers: selectedDevs }),

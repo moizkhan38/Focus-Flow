@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { apiFetch } from '../lib/api.js';
 import { useDevelopers } from '../hooks/useDevelopers';
 import { useProjects } from '../hooks/useProjects';
 import {
@@ -33,7 +34,7 @@ export default function DevelopersPage() {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      const res = await fetch('/api/db/developers/refresh', { method: 'POST' });
+      const res = await apiFetch('/api/db/developers/refresh', { method: 'POST' });
       if (!res.ok) throw new Error((await res.json()).error || 'Refresh failed');
       const data = await res.json();
       // Map DB rows back into the localStorage roster shape and merge in.
@@ -168,7 +169,7 @@ export default function DevelopersPage() {
     );
 
     try {
-      const response = await fetch('/api/analyze-developers', {
+      const response = await apiFetch('/api/analyze-developers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

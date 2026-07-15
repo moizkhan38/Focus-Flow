@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { apiFetch } from '../lib/api.js';
 
 // Strip markdown formatting from LLM output
 function stripMd(text) {
@@ -28,7 +29,7 @@ function cleanLLMData(data) {
 
 // Safe fetch + JSON parse (handles empty/non-JSON responses)
 async function safeFetchJson(url, options) {
-  const res = await fetch(url, options);
+  const res = await apiFetch(url, options);
   const text = await res.text();
   if (!text) return { success: false, error: 'Empty response from server. Please try again.' };
   try { return JSON.parse(text); } catch { return { success: false, error: 'Invalid response from server. Please try again.' }; }

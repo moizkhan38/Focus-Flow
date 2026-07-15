@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { apiFetch } from '../../lib/api.js';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download, RefreshCw, Search, ChevronDown, ChevronRight, AlertTriangle, Loader2, FileJson, FileSpreadsheet } from 'lucide-react';
@@ -67,7 +68,7 @@ export default function Step4_Assignment() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/auto-assign', {
+      const response = await apiFetch('/api/auto-assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ epics: approvedEpics, developers })

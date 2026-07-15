@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../../lib/api.js';
 import { Upload, Loader2, CheckCircle2, AlertCircle, AlertTriangle, Users, FolderPlus, GitBranch, UserPlus, Play, Mail } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -40,7 +41,7 @@ export default function SyncButton({ epics, assignments, dependencies, deadline,
     setError('');
 
     try {
-      const res = await fetch('/api/ai/sync-jira', {
+      const res = await apiFetch('/api/ai/sync-jira', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
