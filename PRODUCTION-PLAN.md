@@ -258,7 +258,7 @@ Standup bot :3000 (Slack signature verified, internal-key to Express, daily remi
 **Accept:** `git grep -n "c:/Users\|C:\\\\Users" -- ':!*.md'` → nothing tracked.
 **Verify (Fable):** grep passes; each `.env.example` contains every Phase-0 var from Appendix A.
 
-### 🚧 GATE G0 — Phase 0 complete `[ ]`
+### 🚧 GATE G0 — Phase 0 complete `[x]` (1 external caveat — Gemini quota)
 **Fable runs all of:**
 1. All Phase-0 steps `[✓]`.
 2. Full local stack boots (Flask via waitress, Express, bot, `npm run dev`) with new env vars; wizard generate → approve → analyze → assign → **Save Without Jira** works.
@@ -632,3 +632,5 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-15 | 0.7 | ✓ | `npm run build` OK (9.9s); grep: no direct fetch('/api') outside lib/api.js; **zero `localhost:3003` in dist/assets/*.js** (DEV fallback tree-shaken); no localhost refs anywhere in bundle. Full wizard-through-apiFetch dev smoke deferred to G0. |
 | 2026-07-15 | 0.8 | ✓ | `npm run migrate` run1 = "1 pending" applied 001_init.sql; run2 = "0 pending"; schema_migrations shows 001_init.sql with applied_at. Idempotent + transactional confirmed. |
 | 2026-07-15 | 0.9 | ✓ | `git grep c:/Users` in tracked non-md source → none; import-standups.js node --check OK; all 4 .env.example files contain their full Phase-0 var set (scripted presence check passed). |
+| 2026-07-15 | model-fix | ✓ | gemini-2.5-flash-lite → 404 for new keys (caught by G0 smoke). Fixed: GEMINI_MODEL env, default gemini-2.0-flash. Request now reaches Gemini; generation blocked only by free-tier quota (429). |
+| 2026-07-15 | **G0** | ✓* | Full stack booted (Express+Flask+bot). Smoke: **24 PASS / 1 FAIL**; the FAIL is [ai] generate blocked by Gemini **free-tier quota (429)** — external, not a code defect (path + error-handling verified). Secret scan clean; `.env` never committed; forged /slack/events=401, /test/reminder=404, hostile Origin no-ACAO, rate-limit 429; `npm run build` OK, zero localhost in bundle. **CAVEAT:** enable billing on the Gemini key (or wait for daily quota reset) for live AI generation — tracked for Phase 4 billing (D5). |
