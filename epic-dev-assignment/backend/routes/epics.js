@@ -5,6 +5,7 @@ import { classifyEpics } from '../services/epicClassifier.js';
 import { sendServerError } from '../utils/httpError.js';
 
 const router = express.Router();
+// Auth: enforced by the default-closed /api gate in server.js.
 
 // Keep in sync with frontend (frontend/src/utils/descriptionValidator.js)
 // and Flask (epic-generator/web_app.py).

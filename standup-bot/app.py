@@ -233,6 +233,18 @@ def create_blocker_ticket(summary, description, project_key=None):
 
 
 EXPRESS_DB_URL = os.environ.get("EXPRESS_DB_URL", "http://localhost:3003/api/db/standups")
+# Clerk org this bot's standups belong to (single-workspace deployment binding, D6).
+STANDUP_ORG_ID = os.environ.get("STANDUP_ORG_ID", "")
+
+
+def _express_headers():
+    """Auth headers for server-to-server calls into the Express API (1.4 lane)."""
+    headers = {}
+    if INTERNAL_API_KEY:
+        headers["X-Internal-Key"] = INTERNAL_API_KEY
+    if STANDUP_ORG_ID:
+        headers["X-Org-Id"] = STANDUP_ORG_ID
+    return headers
 
 
 def save_standup_to_json(user_id, project_key, yesterday, today, blocker, analysis):
@@ -264,7 +276,7 @@ def save_standup_to_json(user_id, project_key, yesterday, today, blocker, analys
 
     # Primary: write to Postgres via Express
     try:
-        resp = requests.post(EXPRESS_DB_URL, json=new_entry, timeout=5)
+        resp = requests.post(EXPRESS_DB_URL, json=new_entry, timeout=5, headers=_express_headers())
         if resp.ok:
             print(f"[SUCCESS] Saved standup to DB for {user_id}")
             return new_entry
@@ -680,7 +692,7 @@ def _load_standups_from_db(project_key=None):
         params = {"limit": 200}
         if project_key:
             params["project_key"] = project_key
-        resp = requests.get(url, params=params, timeout=5)
+        resp = requests.get(url, params=params, timeout=5, headers=_express_headers())
         if not resp.ok:
             print(f"[HISTORY] DB read returned {resp.status_code}")
             return None

@@ -4,7 +4,10 @@ import express from 'express';
 import cors from 'cors';
 import cron from 'node-cron';
 import rateLimit from 'express-rate-limit';
+import { clerkMiddleware } from '@clerk/express';
+import { verifyToken } from '@clerk/backend';
 import { Server as SocketIOServer } from 'socket.io';
+import { requireOrg, orgOrInternal } from './middleware/auth.js';
 import { refreshAllDevelopers } from './services/developerRefresher.js';
 import epicsRouter from './routes/epics.js';
 import developersRouter from './routes/developers.js';
@@ -18,6 +21,15 @@ import { setIo } from './io.js';
 
 const app = express();
 const PORT = process.env.PORT || 3003;
+
+// Clerk is mandatory: without it the API would be open to the internet.
+if (!process.env.CLERK_SECRET_KEY) {
+  console.error(
+    '[Auth] FATAL: CLERK_SECRET_KEY is not set — refusing to start an unauthenticated API.\n' +
+    '       Add it to backend/.env (see .env.example).'
+  );
+  process.exit(1);
+}
 
 // Behind a reverse proxy/load balancer, set TRUST_PROXY=1 so rate limiting and
 // client IPs are correct. 0 (trust nothing) is the safe default for direct exposure.
@@ -38,6 +50,13 @@ app.use(cors({
 
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '2mb' }));
 
+// Parses Clerk session JWTs (Authorization: Bearer) into req auth state.
+// Enforcement happens per-router via requireOrg below.
+app.use(clerkMiddleware({
+  publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
+  secretKey: process.env.CLERK_SECRET_KEY,
+}));
+
 // Liveness check — registered BEFORE the rate limiter so health probes are never throttled.
 app.get('/api/health', (req, res) => {
   res.json({
@@ -56,7 +75,21 @@ app.use('/api', rateLimit({
   legacyHeaders: false,
 }));
 
-// Routes
+// ── Default-closed auth gate ─────────────────────────────────────────────────
+// ONE gate for the whole flat /api namespace. Everything requires a signed-in
+// user with an active org EXCEPT the explicit allowlist below. Default-closed:
+// a newly added route is protected automatically. (Attaching guards per-router
+// doesn't work here: with all routers mounted at '/api', every request enters
+// every router, so any router-level guard would intercept other routers' routes
+// — including the bot's internal lane.)
+// Consequence: unmatched /api/* paths return 401 unauthenticated (not 404).
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health' || req.path === '/db/health') return next(); // open probes
+  if (req.path === '/db/standups') return orgOrInternal(req, res, next);  // bot's internal lane
+  return requireOrg(req, res, next);
+});
+
+// Routes — auth enforced by the gate above.
 app.use('/api', epicsRouter);
 app.use('/api', developersRouter);
 app.use('/api', assignmentRouter);
@@ -83,8 +116,28 @@ const io = new SocketIOServer(httpServer, {
   cors: { origin: allowedOrigins, credentials: true },
 });
 
+// Socket handshake auth: every connection must present a valid Clerk session
+// token with an active org. The client sends it via auth() (see useRealtime.js).
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token;
+    if (!token) return next(new Error('unauthorized'));
+    const payload = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY });
+    // v2 session tokens carry org under `o.id`; v1 used `org_id`.
+    const orgId = payload.o?.id || payload.org_id || null;
+    if (!orgId) return next(new Error('no active organization'));
+    socket.userId = payload.sub;
+    socket.orgId = orgId;
+    return next();
+  } catch {
+    return next(new Error('unauthorized'));
+  }
+});
+
 io.on('connection', (socket) => {
-  // Clients join a project room by Jira project key to receive realtime updates
+  // Clients join a project room by Jira project key to receive realtime updates.
+  // TODO(1.6): once projects.org_id is enforced, validate the key belongs to
+  // socket.orgId before joining.
   socket.on('join', (projectKey) => {
     if (typeof projectKey === 'string' && /^[A-Z][A-Z0-9]{1,9}$/.test(projectKey.toUpperCase())) {
       socket.join(`project:${projectKey.toUpperCase()}`);

@@ -7,6 +7,16 @@
  * PRODUCTION-PLAN.md. If a step intentionally changes a contract (e.g. adding
  * auth turns 200s into 401s), update the affected checks IN THE SAME COMMIT.
  *
+ * AUTH ERA (Phase 1+): the API requires a Clerk session with an active org.
+ *   - The `authz` section ALWAYS runs unauthenticated and asserts 401s — it is
+ *     the proof that enforcement is on.
+ *   - The authed sections (validation, db, jira, ai) need a real session token:
+ *       SMOKE_AUTH_TOKEN=<jwt> node smoke-test.mjs
+ *     Get one from the browser: sign in → devtools console →
+ *       await window.Clerk.session.getToken()
+ *     (Tokens expire in ~60s — grab it right before running.)
+ *   - SMOKE_INTERNAL_KEY=<key> additionally exercises the bot's internal lane.
+ *
  * SAFETY GUARANTEES:
  *   - Never calls POST /api/ai/sync-jira with valid payloads (would create a
  *     real Jira project + send email invites). Only the <2-epics validation
@@ -31,6 +41,8 @@ const RUN_AI = process.argv.includes('--ai');
 // With --strict-external, external-dependency failures (Jira creds, bot up)
 // count as hard failures instead of warnings.
 const STRICT_EXT = process.argv.includes('--strict-external');
+const AUTH_TOKEN = process.env.SMOKE_AUTH_TOKEN || '';
+const INTERNAL_KEY = process.env.SMOKE_INTERNAL_KEY || '';
 
 const results = [];
 let dbUp = false;
@@ -41,13 +53,16 @@ function record(section, name, status, detail = '') {
   console.log(`${icon} [${section}] ${name}${detail ? ` — ${detail}` : ''}`);
 }
 
-async function http(method, url, body, timeoutMs = 15000) {
+async function http(method, url, body, timeoutMs = 15000, { auth = true, headers = {} } = {}) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
+    const h = { ...headers };
+    if (body !== undefined) h['Content-Type'] = 'application/json';
+    if (auth && AUTH_TOKEN) h['Authorization'] = `Bearer ${AUTH_TOKEN}`;
     const res = await fetch(url, {
       method,
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      headers: Object.keys(h).length ? h : undefined,
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: ctrl.signal,
     });
@@ -80,7 +95,7 @@ function expect(cond, message) {
 
 async function expressChecks() {
   const up = await check('express', 'GET /api/health → 200 running', async () => {
-    const r = await http('GET', `${API}/api/health`);
+    const r = await http('GET', `${API}/api/health`, undefined, 15000, { auth: false });
     expect(r.status === 200, `status ${r.status}`);
     expect(r.json?.status === 'running', `body: ${r.text.slice(0, 120)}`);
   });
@@ -89,31 +104,72 @@ async function expressChecks() {
     return false;
   }
 
-  await check('express', 'GET /api/db/health → db connected', async () => {
-    const r = await http('GET', `${API}/api/db/health`);
+  await check('express', 'GET /api/db/health → db connected (open probe)', async () => {
+    const r = await http('GET', `${API}/api/db/health`, undefined, 15000, { auth: false });
     expect(r.status === 200, `status ${r.status}`);
     expect(r.json?.ok === true, `db unreachable: ${r.text.slice(0, 120)}`);
     dbUp = true;
   }, { soft: true });
 
   await check('express', 'disallowed Origin gets no CORS allow header', async () => {
-    const r = await http('GET', `${API}/api/health`, undefined, 15000).catch(() => null);
-    // Re-request with a hostile Origin header
     const res = await fetch(`${API}/api/health`, { headers: { Origin: 'https://evil.example' } });
     expect(!res.headers.get('access-control-allow-origin'), 'ACAO header present for hostile origin');
   });
 
-  await check('express', 'Socket.IO handshake (polling) responds', async () => {
-    const r = await http('GET', `${API}/socket.io/?EIO=4&transport=polling`);
+  await check('express', 'Socket.IO engine handshake responds (auth enforced at connect)', async () => {
+    const r = await http('GET', `${API}/socket.io/?EIO=4&transport=polling`, undefined, 15000, { auth: false });
     expect(r.status === 200, `status ${r.status}`);
     expect(r.text.startsWith('0{'), `unexpected handshake: ${r.text.slice(0, 40)}`);
   });
   return true;
 }
 
-// ── Validation gauntlet (our contract — all free, no external calls) ─────────
+// ── Authorization enforcement (ALWAYS unauthenticated — proves the API is closed) ──
+
+async function authzChecks() {
+  const cases = [
+    ['POST /api/generate', 'POST', `${API}/api/generate`, { description: 'x' }],
+    ['POST /api/regenerate', 'POST', `${API}/api/regenerate`, {}],
+    ['POST /api/classify-epics', 'POST', `${API}/api/classify-epics`, {}],
+    ['POST /api/analyze-developers', 'POST', `${API}/api/analyze-developers`, {}],
+    ['POST /api/auto-assign', 'POST', `${API}/api/auto-assign`, {}],
+    ['POST /api/reassign', 'POST', `${API}/api/reassign`, {}],
+    ['POST /api/ai/sync-jira', 'POST', `${API}/api/ai/sync-jira`, { projectName: 'x', epics: [] }],
+    ['GET  /api/db/projects', 'GET', `${API}/api/db/projects`, undefined],
+    ['DELETE /api/db/projects/:id', 'DELETE', `${API}/api/db/projects/smoke-nonexistent`, undefined],
+    ['GET  /api/db/developers', 'GET', `${API}/api/db/developers`, undefined],
+    ['GET  /api/db/retrospectives', 'GET', `${API}/api/db/retrospectives`, undefined],
+    ['POST /api/db/standups (no key, no session)', 'POST', `${API}/api/db/standups`, {}],
+    ['GET  /api/jira/sprints', 'GET', `${API}/api/jira/sprints`, undefined],
+    ['GET  /api/standup/history', 'GET', `${API}/api/standup/history`, undefined],
+  ];
+  for (const [name, method, url, body] of cases) {
+    await check('authz', `${name} unauthenticated → 401`, async () => {
+      const r = await http(method, url, body, 15000, { auth: false });
+      expect(r.status === 401, `expected 401, got ${r.status}: ${r.text.slice(0, 100)}`);
+    });
+  }
+
+  // Internal service lane: with the shared key, the bot reaches validation (400),
+  // proving the lane bypasses Clerk but not input checks.
+  if (INTERNAL_KEY) {
+    await check('authz', 'POST /api/db/standups with X-Internal-Key → 400 (reaches validation)', async () => {
+      const r = await http('POST', `${API}/api/db/standups`, {}, 15000,
+        { auth: false, headers: { 'X-Internal-Key': INTERNAL_KEY } });
+      expect(r.status === 400, `expected 400, got ${r.status}: ${r.text.slice(0, 100)}`);
+    });
+  } else {
+    record('authz', 'internal lane (X-Internal-Key → 400)', 'SKIP', 'set SMOKE_INTERNAL_KEY to test');
+  }
+}
+
+// ── Validation gauntlet (authed — requires SMOKE_AUTH_TOKEN) ─────────────────
 
 async function validationChecks() {
+  if (!AUTH_TOKEN) {
+    record('validation', 'authed validation gauntlet', 'SKIP', 'set SMOKE_AUTH_TOKEN (see header)');
+    return;
+  }
   const cases = [
     ['POST /api/generate {} → 400', 'POST', `${API}/api/generate`, {}],
     ['POST /api/generate short → 400', 'POST', `${API}/api/generate`, { description: 'Build an app' }],
@@ -127,7 +183,6 @@ async function validationChecks() {
     ['POST /api/ai/sync-jira <2 epics → 400 (pre-Jira)', 'POST', `${API}/api/ai/sync-jira`,
       { projectName: 'Smoke', epics: [], assignments: [] }],
     ['POST /api/db/projects {} → 400', 'POST', `${API}/api/db/projects`, {}],
-    ['POST /api/db/standups {} → 400', 'POST', `${API}/api/db/standups`, {}],
     ['POST /api/db/developers {} → 400', 'POST', `${API}/api/db/developers`, {}],
   ];
   for (const [name, method, url, body] of cases) {
@@ -149,9 +204,13 @@ async function validationChecks() {
   });
 }
 
-// ── Postgres roundtrip (own row only) ────────────────────────────────────────
+// ── Postgres roundtrip (authed, own row only) ────────────────────────────────
 
 async function dbChecks() {
+  if (!AUTH_TOKEN) {
+    record('db', 'project CRUD roundtrip', 'SKIP', 'set SMOKE_AUTH_TOKEN');
+    return;
+  }
   if (!dbUp) {
     record('db', 'project CRUD roundtrip', 'SKIP', 'db not connected');
     return;
@@ -169,9 +228,13 @@ async function dbChecks() {
   });
 }
 
-// ── Jira (read-only, external dependency → soft) ─────────────────────────────
+// ── Jira (authed, read-only, external dependency → soft) ─────────────────────
 
 async function jiraChecks() {
+  if (!AUTH_TOKEN) {
+    record('jira', 'jira read-only checks', 'SKIP', 'set SMOKE_AUTH_TOKEN');
+    return;
+  }
   const healthy = await check('jira', 'GET /api/jira/health → connected', async () => {
     const r = await http('GET', `${API}/api/jira/health`, undefined, 20000);
     expect(r.status === 200, `status ${r.status}: ${r.text.slice(0, 120)}`);
@@ -196,7 +259,7 @@ async function jiraChecks() {
 
 async function flaskChecks() {
   const up = await check('flask', 'GET /api/health → 200', async () => {
-    const r = await http('GET', `${FLASK}/api/health`);
+    const r = await http('GET', `${FLASK}/api/health`, undefined, 15000, { auth: false });
     expect(r.status === 200, `status ${r.status}`);
   });
   if (!up) {
@@ -204,11 +267,11 @@ async function flaskChecks() {
     return;
   }
   await check('flask', 'POST /api/generate short → 400 (validation, no Gemini)', async () => {
-    const r = await http('POST', `${FLASK}/api/generate`, { description: 'x' });
+    const r = await http('POST', `${FLASK}/api/generate`, { description: 'x' }, 15000, { auth: false });
     expect(r.status === 400, `expected 400, got ${r.status}`);
   });
   await check('flask', 'POST /api/classify {} → 400', async () => {
-    const r = await http('POST', `${FLASK}/api/classify`, {});
+    const r = await http('POST', `${FLASK}/api/classify`, {}, 15000, { auth: false });
     expect(r.status === 400, `expected 400, got ${r.status}`);
   });
 }
@@ -217,7 +280,7 @@ async function flaskChecks() {
 
 async function botChecks() {
   const up = await check('bot', 'GET /api/health → 200 running', async () => {
-    const r = await http('GET', `${BOT}/api/health`, undefined, 8000);
+    const r = await http('GET', `${BOT}/api/health`, undefined, 8000, { auth: false });
     expect(r.status === 200 && r.json?.status === 'running', `status ${r.status}`);
   }, { soft: true });
   if (!up) {
@@ -227,7 +290,7 @@ async function botChecks() {
   await check('bot', 'GET /api/standup/history → success', async () => {
     // Filter by a nonexistent project key: exercises route + DB read without
     // triggering the per-entry Slack display-name enrichment (N+1 API calls).
-    const r = await http('GET', `${BOT}/api/standup/history?project_key=SMOKE-NONE`, undefined, 20000);
+    const r = await http('GET', `${BOT}/api/standup/history?project_key=SMOKE-NONE`, undefined, 20000, { auth: false });
     expect(r.status === 200 && r.json?.success === true, `status ${r.status}: ${r.text.slice(0, 80)}`);
     return `${r.json.standups?.length ?? 0} standup(s) for filter`;
   }, { soft: true });
@@ -237,7 +300,7 @@ async function botChecks() {
 
 async function frontendChecks() {
   try {
-    const r = await http('GET', `${FRONTEND}/`, undefined, 8000);
+    const r = await http('GET', `${FRONTEND}/`, undefined, 8000, { auth: false });
     if (r.status === 200 && r.text.includes('id="root"')) {
       record('frontend', 'GET / → 200 with #root', 'PASS');
     } else {
@@ -253,6 +316,10 @@ async function frontendChecks() {
 async function aiChecks() {
   if (!RUN_AI) {
     record('ai', 'full generation Express→Flask→Gemini→parser', 'SKIP', 'pass --ai to enable');
+    return;
+  }
+  if (!AUTH_TOKEN) {
+    record('ai', 'full generation Express→Flask→Gemini→parser', 'SKIP', '--ai now needs SMOKE_AUTH_TOKEN');
     return;
   }
   await check('ai', 'POST /api/generate full pipeline → epics with stories', async () => {
@@ -272,9 +339,11 @@ async function aiChecks() {
 
 // ── Run ──────────────────────────────────────────────────────────────────────
 
-console.log(`\nFocus Flow smoke tests — ${API}\n${'─'.repeat(60)}`);
+console.log(`\nFocus Flow smoke tests — ${API}`);
+console.log(`auth: ${AUTH_TOKEN ? 'SMOKE_AUTH_TOKEN provided (authed sections ON)' : 'unauthenticated (enforcement checks only)'}\n${'─'.repeat(60)}`);
 const expressUp = await expressChecks();
 if (expressUp) {
+  await authzChecks();
   await validationChecks();
   await dbChecks();
   await jiraChecks();

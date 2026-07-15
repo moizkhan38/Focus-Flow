@@ -1,5 +1,6 @@
 import express from 'express';
 import { sendServerError } from '../utils/httpError.js';
+import { requireOrg, orgOrInternal } from '../middleware/auth.js';
 import { query, ping } from '../db.js';
 import { refreshAllDevelopers } from '../services/developerRefresher.js';
 
@@ -14,7 +15,7 @@ router.get('/db/health', async (_req, res) => {
 
 // ─── Standups ───────────────────────────────────────────────────────────────
 
-router.post('/db/standups', async (req, res) => {
+router.post('/db/standups', orgOrInternal, async (req, res) => {
   try {
     const {
       user_id, project_key, timestamp, yesterday, today, blocker,
@@ -40,7 +41,7 @@ router.post('/db/standups', async (req, res) => {
   }
 });
 
-router.get('/db/standups', async (req, res) => {
+router.get('/db/standups', orgOrInternal, async (req, res) => {
   try {
     const { user_id, project_key, since, limit = 100 } = req.query;
     const conds = [];
@@ -59,6 +60,11 @@ router.get('/db/standups', async (req, res) => {
     sendServerError(res, err);
   }
 });
+
+// Everything below requires a signed-in user with an active organization.
+// (Routes above: /db/health is an open probe; /db/standups accept the bot's
+// internal-key lane via orgOrInternal.)
+router.use(requireOrg);
 
 // ─── Retrospectives ─────────────────────────────────────────────────────────
 

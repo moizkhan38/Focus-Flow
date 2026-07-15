@@ -2,6 +2,8 @@ import express from 'express';
 import { sendServerError } from '../utils/httpError.js';
 
 const router = express.Router();
+// Auth: enforced by the default-closed /api gate in server.js (plain requireOrg —
+// these proxy routes are frontend-only; the bot never calls them).
 const FOCUS_FLOW_URL = process.env.FOCUS_FLOW_URL || 'http://localhost:3000';
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 

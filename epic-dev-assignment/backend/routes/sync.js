@@ -8,6 +8,7 @@ import {
 } from '../services/jiraService.js';
 
 const router = express.Router();
+// Auth: enforced by the default-closed /api gate in server.js.
 
 /**
  * Distribute stories across sprints respecting dependencies and epic cohesion.

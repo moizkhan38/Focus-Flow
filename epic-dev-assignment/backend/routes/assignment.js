@@ -3,6 +3,7 @@ import { sendServerError } from '../utils/httpError.js';
 import { autoAssignStories, reassignStory } from '../services/assignmentService.js';
 
 const router = express.Router();
+// Auth: enforced by the default-closed /api gate in server.js.
 
 // POST /api/auto-assign - Auto-assign stories to developers
 router.post('/auto-assign', async (req, res) => {

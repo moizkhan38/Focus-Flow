@@ -20,6 +20,7 @@ import {
 } from '../services/jiraService.js';
 
 const router = express.Router();
+// Auth: enforced by the default-closed /api gate in server.js.
 
 router.get('/jira/test', async (req, res) => {
   try {

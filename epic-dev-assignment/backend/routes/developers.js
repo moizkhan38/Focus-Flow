@@ -4,6 +4,7 @@ import { analyzeDeveloper } from '../services/githubService.js';
 import { query } from '../db.js';
 
 const router = express.Router();
+// Auth: enforced by the default-closed /api gate in server.js.
 
 // POST /api/analyze-developers - Analyze multiple developers
 // Accepts either:
