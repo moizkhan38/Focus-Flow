@@ -19,6 +19,32 @@ export function apiUrl(path) {
   return `${API_BASE}${path}`;
 }
 
-export function apiFetch(path, opts) {
-  return fetch(apiUrl(path), opts);
+// ─── Auth token bridge ───────────────────────────────────────────────────────
+// Clerk's getToken() is a React hook product, but the API layer is plain JS.
+// AuthBridge (rendered inside ClerkProvider) registers the getter here once, and
+// every request pulls a fresh short-lived JWT through it.
+let tokenGetter = null;
+
+export function setTokenGetter(fn) {
+  tokenGetter = fn;
+}
+
+export async function getAuthToken() {
+  try {
+    return tokenGetter ? await tokenGetter() : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function apiFetch(path, opts = {}) {
+  const token = await getAuthToken();
+  const headers = { ...(opts.headers || {}) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(apiUrl(path), { ...opts, headers });
+  if (res.status === 401) {
+    // Session expired/invalid — let the app react (Clerk will re-authenticate).
+    window.dispatchEvent(new Event('auth:expired'));
+  }
+  return res;
 }

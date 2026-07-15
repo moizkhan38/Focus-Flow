@@ -291,7 +291,7 @@ Standup bot :3000 (Slack signature verified, internal-key to Express, daily remi
 **Accept:** Fresh browser → redirected to Clerk sign-in; after signup + org creation → app renders; hard refresh stays signed in.
 **Verify (Fable):** manual flow above; `grep -rn "admin' \|'1234'" src/` still present only in files scheduled for deletion in 1.8; build passes.
 
-### Step 1.3 — Frontend: authenticated API layer + socket auth `[ ]`
+### Step 1.3 — Frontend: authenticated API layer + socket auth `[x]`
 **Size:** M · **Owner:** Opus
 **Files:** `frontend/src/lib/api.js`, new `src/lib/AuthBridge.jsx`, `src/hooks/useRealtime.js`, SWR fetchers
 **Spec:**
@@ -620,6 +620,7 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-15 | 0.9 | `p0.9: portability — kill machine path, reconcile env-examples, README prod notes` | import-standups.js: c:/Users/... literal → path.resolve(__dirname,'..','..','..','standup-bot','standup_data.json') + argv[2] override. backend/.env.example +FOCUS_FLOW_URL +DEV_REFRESH_CRON. README: migrate cmd → npm run migrate + new Production notes section pointing at this plan. |
 | 2026-07-15 | 1.1 | (user action — .env only) | Clerk app "Focus Flow" created (instance handy-gannet-17). Keys verified live: pk in frontend/.env.local (decodes to instance domain), sk in backend/.env (200 on /v1/users). Organizations enabled, **membership required** mode (200 on /v1/organizations). Packages installed: @clerk/clerk-react 5.61.9, @clerk/express, @clerk/backend. |
 | 2026-07-15 | 1.2 | `p1.2: Clerk frontend — provider, SignIn/SignUp, org-gated AuthGuard, org switcher` | main.jsx ClerkProvider (fail-fast ConfigError w/o key); routes /login/* + /signup/* (path routing); AuthGuard → SignedIn/SignedOut + OrgGate (OrganizationList hidePersonal); Login/Signup pages w/ branding; Header + Sidebar get OrganizationSwitcher/UserButton; Sidebar logout → useClerk().signOut() (user caught the dead old logout during interactive test). AuthContext mounted but consumer-free (1.8 removes). |
+| 2026-07-15 | 1.3 | `p1.3: authed API layer — token getter bridge + Bearer on every call + socket auth` | lib/api.js: setTokenGetter/getAuthToken; apiFetch attaches Authorization: Bearer (fresh JWT per request), dispatches auth:expired on 401. AuthBridge.jsx (inside ClerkProvider) registers Clerk getToken. useRealtime: socket auth as function → fresh token on every (re)connect. All call sites already routed via apiFetch (0.7). Interactive proof lands with 1.4 enforcement. |
 
 # Verification Log (Fable appends; newest last)
 | Date | Step | Result | Evidence |

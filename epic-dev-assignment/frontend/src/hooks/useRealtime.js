@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { SOCKET_URL } from '../lib/api.js';
+import { SOCKET_URL, getAuthToken } from '../lib/api.js';
 import { io } from 'socket.io-client';
 
 // Singleton socket — shared across all components so we don't open N connections.
@@ -7,7 +7,15 @@ let socket = null;
 function getSocket() {
   if (!socket) {
     // In dev, Vite proxies the HTTP API but NOT websockets. Connect directly to :3003.
-    socket = io(SOCKET_URL, { transports: ['websocket'], autoConnect: true });
+    // auth as a FUNCTION: socket.io re-invokes it on every (re)connection attempt,
+    // so reconnects always carry a fresh short-lived Clerk JWT.
+    socket = io(SOCKET_URL, {
+      transports: ['websocket'],
+      autoConnect: true,
+      auth: (cb) => {
+        getAuthToken().then((token) => cb({ token })).catch(() => cb({}));
+      },
+    });
   }
   return socket;
 }

@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { ClerkProvider } from '@clerk/clerk-react'
 import App from './App.jsx'
+import AuthBridge from './lib/AuthBridge.jsx'
 import './index.css'
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
@@ -31,6 +32,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         signUpUrl="/signup"
         afterSignOutUrl="/login"
       >
+        <AuthBridge />
         <App />
       </ClerkProvider>
     ) : (
