@@ -51,7 +51,7 @@ Unified Scrum automation platform: AI-powered epic/story generation, developer a
    cd epic-generator && pip install -r requirements.txt
    cd standup-bot && pip install -r requirements.txt
    ```
-5. **Run migrations:** `cd epic-dev-assignment/backend && node scripts/migrate.js`
+5. **Run migrations:** `cd epic-dev-assignment/backend && npm run migrate`
 6. **Start everything** (Windows): `cd epic-dev-assignment && start-all.bat`
 
 ## Project structure
@@ -64,6 +64,18 @@ integration/
 ├── epic-generator/       Flask Gemini wrapper
 └── standup-bot/          Slack standup Flask app
 ```
+
+## Production notes
+
+This repo is being hardened for a multi-tenant SaaS deployment. The full plan, current status, and per-service env-var matrix live in [`PRODUCTION-PLAN.md`](PRODUCTION-PLAN.md).
+
+Key operational requirements when deploying:
+
+- **All config via env** — nothing hardcoded. Each service reads its own `.env` (see the `.env.example` files). `DATABASE_URL` is required (the backend refuses to start without it); set `DATABASE_SSL=true` for managed Postgres.
+- **Internal services are gated** — set a shared `INTERNAL_API_KEY` across the backend, Flask, and standup bot so Flask and the bot only accept calls from the gateway. Set `SLACK_SIGNING_SECRET` for the bot (it refuses to start without it unless `FLASK_DEBUG=true`).
+- **Run behind a real WSGI server** — Flask and the bot ship a `waitress-serve` command (printed in each app's startup banner); never run `FLASK_DEBUG=true` on a public host.
+- **Frontend** — set `VITE_API_URL` at build time to point the static bundle at the backend origin (empty = same-origin behind a reverse proxy).
+- **Behind a proxy/LB** — set `TRUST_PROXY=1` and `CORS_ORIGINS` to your real frontend origin.
 
 ## License
 

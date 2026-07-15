@@ -1,9 +1,14 @@
 import 'dotenv/config';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { pool, query } from '../db.js';
 
-const JSON_PATH = process.argv[2] || 'c:/Users/user/Documents/standup-bot/standup_data.json';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Default to the repo's standup-bot data file; override with an explicit path:
+//   node scripts/import-standups.js /path/to/standup_data.json
+const JSON_PATH = process.argv[2]
+  || path.resolve(__dirname, '..', '..', '..', 'standup-bot', 'standup_data.json');
 
 async function run() {
   console.log(`[Import] Reading ${JSON_PATH}`);

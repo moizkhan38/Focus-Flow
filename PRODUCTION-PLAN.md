@@ -247,7 +247,7 @@ Standup bot :3000 (Slack signature verified, internal-key to Express, daily remi
 **Accept:** running `npm run migrate` twice in a row: first run applies pending, second prints "0 pending".
 **Verify (Fable):** run twice, observe idempotency; `SELECT * FROM schema_migrations` lists `001_init.sql`.
 
-### Step 0.9 — Portability + env-example sweep `[ ]`
+### Step 0.9 — Portability + env-example sweep `[x]`
 **Size:** S · **Owner:** Opus
 **Why:** Machine-specific path in `scripts/import-standups.js:6`; `.env.example` files must document every env var Phase 0 introduced.
 **Files:** `backend/scripts/import-standups.js`, all four `.env.example` files, `README.md`
@@ -617,6 +617,7 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-14 | 0.6 | `p0.6: stop leaking internal errors — sendServerError/sendUpstreamError sweep` | New utils/httpError.js: sendServerError (internal → generic + log) and sendUpstreamError (Jira parseJiraError output → safe passthrough, still logged). Swept 34 sites across db/jira/sync/assignment/epics/developers/standup. Kept: Jira warnings[]/health feedback + server logs + developers.js filtered per-user error (never sent). |
 | 2026-07-15 | 0.7 | `p0.7: frontend env-driven API base + socket URL (VITE_API_URL)` | New src/lib/api.js (API_BASE, SOCKET_URL, apiUrl, apiFetch). Swept 16 direct fetch('/api') sites across 11 files + safeFetchJson wrapper (WorkflowContext ×4) + SWR fetcher (useSprintData) to apiFetch; useRealtime io()→SOCKET_URL. New frontend/.env.example (VITE_API_URL / VITE_SOCKET_URL, public-only note). Dev unchanged (empty API_BASE → Vite proxy). |
 | 2026-07-15 | 0.8 | `p0.8: migration runner — schema_migrations tracking + per-file transactions` | migrate.js: creates schema_migrations(filename PK, applied_at); skips applied files; each pending file runs in BEGIN/COMMIT with ROLLBACK on error. package.json +migrate script. |
+| 2026-07-15 | 0.9 | `p0.9: portability — kill machine path, reconcile env-examples, README prod notes` | import-standups.js: c:/Users/... literal → path.resolve(__dirname,'..','..','..','standup-bot','standup_data.json') + argv[2] override. backend/.env.example +FOCUS_FLOW_URL +DEV_REFRESH_CRON. README: migrate cmd → npm run migrate + new Production notes section pointing at this plan. |
 
 # Verification Log (Fable appends; newest last)
 | Date | Step | Result | Evidence |
@@ -630,3 +631,4 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-14 | 0.6 | ✓ | All 7 routes + helper node --check OK; grep confirms zero err.message on any status(500) line; good-DB smoke green (db CRUD + validation, 19 PASS); forced 500 (bad DB pw) → client gets `{"error":"Internal server error"}`, server log holds real `password authentication failed`. |
 | 2026-07-15 | 0.7 | ✓ | `npm run build` OK (9.9s); grep: no direct fetch('/api') outside lib/api.js; **zero `localhost:3003` in dist/assets/*.js** (DEV fallback tree-shaken); no localhost refs anywhere in bundle. Full wizard-through-apiFetch dev smoke deferred to G0. |
 | 2026-07-15 | 0.8 | ✓ | `npm run migrate` run1 = "1 pending" applied 001_init.sql; run2 = "0 pending"; schema_migrations shows 001_init.sql with applied_at. Idempotent + transactional confirmed. |
+| 2026-07-15 | 0.9 | ✓ | `git grep c:/Users` in tracked non-md source → none; import-standups.js node --check OK; all 4 .env.example files contain their full Phase-0 var set (scripted presence check passed). |
