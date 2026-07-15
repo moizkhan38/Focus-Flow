@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { WorkflowProvider, useWorkflow } from './context/WorkflowContext'
-import { AuthProvider } from './context/AuthContext'
 import { ProjectsProvider } from './hooks/useProjects'
 import { NotificationsProvider } from './hooks/useNotifications'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -145,7 +144,6 @@ function App() {
   return (
     <ThemeContext.Provider value={themeState}>
       <ErrorBoundary>
-      <AuthProvider>
         <ProjectsProvider>
         <NotificationsProvider>
         <BrowserRouter>
@@ -202,7 +200,6 @@ function App() {
         </BrowserRouter>
         </NotificationsProvider>
         </ProjectsProvider>
-      </AuthProvider>
       </ErrorBoundary>
     </ThemeContext.Provider>
   )
