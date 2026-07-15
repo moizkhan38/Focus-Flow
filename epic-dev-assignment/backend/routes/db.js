@@ -202,17 +202,18 @@ router.delete('/db/projects/:id', async (req, res) => {
 router.post('/db/developers', async (req, res) => {
   try {
     const {
-      username, jira_username, avatar_url, primary_expertise, experience_level,
+      username, email, jira_username, avatar_url, primary_expertise, experience_level,
       top_skills, analysis, availability,
     } = req.body;
     if (!username) return res.status(400).json({ error: 'username is required' });
 
     const result = await query(
       `INSERT INTO developers
-         (org_id, username, jira_username, avatar_url, primary_expertise, experience_level,
+         (org_id, username, email, jira_username, avatar_url, primary_expertise, experience_level,
           top_skills, analysis, availability)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        ON CONFLICT (org_id, username) DO UPDATE SET
+         email             = COALESCE(EXCLUDED.email,             developers.email),
          jira_username     = COALESCE(EXCLUDED.jira_username,     developers.jira_username),
          avatar_url        = COALESCE(EXCLUDED.avatar_url,        developers.avatar_url),
          primary_expertise = COALESCE(EXCLUDED.primary_expertise, developers.primary_expertise),
@@ -221,7 +222,7 @@ router.post('/db/developers', async (req, res) => {
          analysis          = COALESCE(EXCLUDED.analysis,          developers.analysis),
          availability      = COALESCE(EXCLUDED.availability,      developers.availability)
        RETURNING *`,
-      [req.orgId, username, jira_username || null, avatar_url || null, primary_expertise || null,
+      [req.orgId, username, email || null, jira_username || null, avatar_url || null, primary_expertise || null,
        experience_level || null, top_skills || null, analysis || null, availability || null]
     );
     res.status(201).json(result.rows[0]);
