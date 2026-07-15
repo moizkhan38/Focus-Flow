@@ -272,13 +272,13 @@ Standup bot :3000 (Slack signature verified, internal-key to Express, daily remi
 # PHASE 1 — Accounts, organizations, tenancy, Postgres persistence
 *Clerk for identity/orgs; every row and every query gains `org_id`; frontend moves from localStorage to the DB.*
 
-### Step 1.1 — Clerk application setup `[ ]` **USER-ACTION**
+### Step 1.1 — Clerk application setup `[x]` **USER-ACTION**
 **Size:** S · **Owner:** USER (Opus guides)
 **Spec (user):** Create app at dashboard.clerk.com → enable **Organizations** (Settings → Organizations) → copy `CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY` (dev instance) → give to Opus for `.env` placement (`frontend/.env.local`: `VITE_CLERK_PUBLISHABLE_KEY`; `backend/.env`: `CLERK_SECRET_KEY`).
 **Accept:** Keys present locally (never committed); Clerk dashboard shows Organizations enabled.
 **Verify (Fable):** `.env.example`s updated with empty placeholders; `git grep "pk_live\|pk_test\|sk_live\|sk_test"` → nothing tracked.
 
-### Step 1.2 — Frontend: ClerkProvider, sign-in, org gating `[ ]`
+### Step 1.2 — Frontend: ClerkProvider, sign-in, org gating `[x]`
 **Size:** M · **Owner:** Opus
 **Why:** A7 — replace fake `admin/1234` client-side auth.
 **Files:** `frontend/src/main.jsx` or `App.jsx`, `src/pages/Login.jsx`, `src/components/layout/AuthGuard.jsx`, `src/components/layout/Header.jsx`, `package.json`
@@ -618,6 +618,8 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-15 | 0.7 | `p0.7: frontend env-driven API base + socket URL (VITE_API_URL)` | New src/lib/api.js (API_BASE, SOCKET_URL, apiUrl, apiFetch). Swept 16 direct fetch('/api') sites across 11 files + safeFetchJson wrapper (WorkflowContext ×4) + SWR fetcher (useSprintData) to apiFetch; useRealtime io()→SOCKET_URL. New frontend/.env.example (VITE_API_URL / VITE_SOCKET_URL, public-only note). Dev unchanged (empty API_BASE → Vite proxy). |
 | 2026-07-15 | 0.8 | `p0.8: migration runner — schema_migrations tracking + per-file transactions` | migrate.js: creates schema_migrations(filename PK, applied_at); skips applied files; each pending file runs in BEGIN/COMMIT with ROLLBACK on error. package.json +migrate script. |
 | 2026-07-15 | 0.9 | `p0.9: portability — kill machine path, reconcile env-examples, README prod notes` | import-standups.js: c:/Users/... literal → path.resolve(__dirname,'..','..','..','standup-bot','standup_data.json') + argv[2] override. backend/.env.example +FOCUS_FLOW_URL +DEV_REFRESH_CRON. README: migrate cmd → npm run migrate + new Production notes section pointing at this plan. |
+| 2026-07-15 | 1.1 | (user action — .env only) | Clerk app "Focus Flow" created (instance handy-gannet-17). Keys verified live: pk in frontend/.env.local (decodes to instance domain), sk in backend/.env (200 on /v1/users). Organizations enabled, **membership required** mode (200 on /v1/organizations). Packages installed: @clerk/clerk-react 5.61.9, @clerk/express, @clerk/backend. |
+| 2026-07-15 | 1.2 | `p1.2: Clerk frontend — provider, SignIn/SignUp, org-gated AuthGuard, org switcher` | main.jsx ClerkProvider (fail-fast ConfigError w/o key); routes /login/* + /signup/* (path routing); AuthGuard → SignedIn/SignedOut + OrgGate (OrganizationList hidePersonal); Login/Signup pages w/ branding; Header + Sidebar get OrganizationSwitcher/UserButton; Sidebar logout → useClerk().signOut() (user caught the dead old logout during interactive test). AuthContext mounted but consumer-free (1.8 removes). |
 
 # Verification Log (Fable appends; newest last)
 | Date | Step | Result | Evidence |

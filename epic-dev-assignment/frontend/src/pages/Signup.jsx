@@ -1,7 +1,7 @@
-import { SignIn } from '@clerk/clerk-react';
+import { SignUp } from '@clerk/clerk-react';
 import { Zap } from 'lucide-react';
 
-export default function Login() {
+export default function Signup() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-4 py-10" style={{ background: '#f9fafb' }}>
       {/* Logo */}
@@ -13,7 +13,7 @@ export default function Login() {
         <p className="mt-1 text-sm text-gray-500">AI-Powered Sprint Management</p>
       </div>
 
-      <SignIn routing="path" path="/login" signUpUrl="/signup" fallbackRedirectUrl="/projects" />
+      <SignUp routing="path" path="/signup" signInUrl="/login" fallbackRedirectUrl="/projects" />
     </div>
   );
 }

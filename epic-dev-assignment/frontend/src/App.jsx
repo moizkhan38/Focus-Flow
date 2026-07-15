@@ -23,6 +23,7 @@ import Step4_Assignment from './components/steps/Step4_Assignment'
 
 // Pages
 import Login from './pages/Login'
+import Signup from './pages/Signup'
 import ProjectsPage from './pages/projects/ProjectsPage'
 import ProjectWizardPage from './pages/projects/ProjectWizardPage'
 import ProjectDetailPage from './pages/projects/ProjectDetailPage'
@@ -150,8 +151,10 @@ function App() {
         <BrowserRouter>
           <NotificationToast />
           <Routes>
-            {/* Public */}
-            <Route path="/login" element={<Login />} />
+            {/* Public — wildcard routes: Clerk's path routing renders sub-steps
+                (verification, SSO callback) under these paths */}
+            <Route path="/login/*" element={<Login />} />
+            <Route path="/signup/*" element={<Signup />} />
 
             {/* Default: redirect to projects */}
             <Route path="/" element={<Navigate to="/projects" replace />} />

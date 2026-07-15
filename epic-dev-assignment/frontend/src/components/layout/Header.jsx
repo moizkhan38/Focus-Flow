@@ -1,5 +1,6 @@
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useThemeContext } from '../../App';
+import { OrganizationSwitcher, UserButton } from '@clerk/clerk-react';
 import { Sparkles, Sun, Moon } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -32,6 +33,8 @@ export default function Header() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <OrganizationSwitcher hidePersonal afterSelectOrganizationUrl="/projects" />
+          <UserButton />
           <motion.button
             onClick={toggleTheme}
             className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-300"

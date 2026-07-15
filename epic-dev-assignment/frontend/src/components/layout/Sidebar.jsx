@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useClerk, OrganizationSwitcher } from '@clerk/clerk-react';
 import {
   FolderKanban,
   PlusCircle,
@@ -46,7 +46,7 @@ function NavItem({ to, label, icon: Icon, end }) {
 }
 
 export default function Sidebar() {
-  const { logout } = useAuth();
+  const { signOut } = useClerk();
 
   return (
     <aside className="flex h-screen w-56 flex-shrink-0 flex-col border-r border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900">
@@ -75,10 +75,13 @@ export default function Sidebar() {
 
       </nav>
 
-      {/* Logout */}
-      <div className="border-t border-gray-200 dark:border-white/10 p-3">
+      {/* Organization + Logout */}
+      <div className="border-t border-gray-200 dark:border-white/10 p-3 space-y-2">
+        <div className="px-1">
+          <OrganizationSwitcher hidePersonal afterSelectOrganizationUrl="/projects" />
+        </div>
         <button
-          onClick={logout}
+          onClick={() => signOut()}
           className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
         >
           <LogOut className="h-4 w-4 flex-shrink-0" />
