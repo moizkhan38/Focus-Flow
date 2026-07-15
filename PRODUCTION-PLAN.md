@@ -354,6 +354,7 @@ Standup bot :3000 (Slack signature verified, internal-key to Express, daily remi
 - **Isolation test:** create org A and org B (two browsers/users); A creates a project; B's `/api/db/projects` → `[]`; B `DELETE` A's project id → 404 and A's row survives.
 
 ### Step 1.7 — Frontend: swap localStorage hooks to Postgres-backed SWR `[ ]`
+> **Review finding (2026-07-15, confirmed):** unscoped localStorage keys (`focus-flow-projects` etc.) leak tenant data across accounts/orgs on a shared browser — nothing purges them on sign-out. **Resolved BY this step** (server becomes source of truth; local copies removed). Deliberately NOT purge-on-signout before 1.7: localStorage is the ONLY store until then, purging = user data loss. Risk window acceptable (localhost dev, single user, G1 blocks multi-user use until 1.7 done).
 **Size:** L · **Owner:** Opus
 **Why:** A6, D4 — data must survive browsers and be shared org-wide.
 **Files:** `frontend/src/hooks/useProjects.jsx`, `useDevelopers.js`, `useRetro.js`; touch-points listed below

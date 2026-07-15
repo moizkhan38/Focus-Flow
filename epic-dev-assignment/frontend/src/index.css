@@ -556,3 +556,10 @@ html:not(.dark) .text-indigo { color: #4F46E5 !important; }
 html:not(.dark) .recharts-text { fill: var(--text-tertiary) !important; }
 html:not(.dark) .recharts-cartesian-grid line { stroke: var(--border-subtle) !important; }
 html:not(.dark) select option { background: var(--bg-body); color: var(--text-primary); }
+
+/* Clerk components — follow the app theme. Clerk defaults to light-theme text
+   (~#212126), illegible on the dark wizard header / dark sidebar. Flat selectors
+   only (no PostCSS nesting plugin). */
+.cl-organizationSwitcherTrigger { color: var(--text-primary) !important; }
+.cl-organizationSwitcherTrigger .cl-organizationPreviewMainIdentifier { color: var(--text-primary) !important; }
+.cl-userButtonOuterIdentifier { color: var(--text-primary) !important; }
