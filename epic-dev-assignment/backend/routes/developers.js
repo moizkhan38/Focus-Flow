@@ -72,15 +72,15 @@ router.post('/analyze-developers', async (req, res) => {
       try {
         await query(
           `INSERT INTO developers
-             (username, avatar_url, primary_expertise, experience_level, top_skills, analysis)
-           VALUES ($1,$2,$3,$4,$5,$6)
-           ON CONFLICT (username) DO UPDATE SET
+             (org_id, username, avatar_url, primary_expertise, experience_level, top_skills, analysis)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
+           ON CONFLICT (org_id, username) DO UPDATE SET
              avatar_url        = EXCLUDED.avatar_url,
              primary_expertise = EXCLUDED.primary_expertise,
              experience_level  = EXCLUDED.experience_level,
              top_skills        = EXCLUDED.top_skills,
              analysis          = EXCLUDED.analysis`,
-          [d.username, d.avatar_url, d.primary_expertise, d.experience_level, d.top_skills, d.analysis || null]
+          [req.orgId, d.username, d.avatar_url, d.primary_expertise, d.experience_level, d.top_skills, d.analysis || null]
         );
       } catch (err) {
         console.warn(`[Developers] DB upsert failed for ${d.username}: ${err.message}`);

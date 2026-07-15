@@ -13,11 +13,12 @@ export async function refreshAllDevelopers() {
   const errors = [];
 
   try {
+    // Developers are per-org rows now — refresh each (org_id, username) row.
     const { rows: devs } = await query(
-      `SELECT username, jira_username FROM developers ORDER BY updated_at ASC`
+      `SELECT org_id, username, jira_username FROM developers ORDER BY updated_at ASC`
     );
     total = devs.length;
-    console.log(`[DevRefresh] Found ${total} developer(s) to refresh`);
+    console.log(`[DevRefresh] Found ${total} developer row(s) across all orgs to refresh`);
 
     for (const dev of devs) {
       try {
@@ -26,7 +27,8 @@ export async function refreshAllDevelopers() {
           throw new Error(fresh?.error || 'analysis returned no data');
         }
 
-        // Upsert — preserve user-edited jira_username and availability
+        // Update — preserve user-edited jira_username and availability; keyed by
+        // (org_id, username) since the same GitHub user can be on several rosters.
         await query(
           `UPDATE developers SET
               avatar_url        = $2,
@@ -34,7 +36,7 @@ export async function refreshAllDevelopers() {
               experience_level  = $4,
               top_skills        = $5,
               analysis          = $6
-           WHERE username = $1`,
+           WHERE username = $1 AND org_id = $7`,
           [
             dev.username,
             fresh.avatar || `https://avatars.githubusercontent.com/${dev.username}`,
@@ -42,6 +44,7 @@ export async function refreshAllDevelopers() {
             fresh.analysis?.experienceLevel?.level || null,
             (fresh.analysis?.expertise?.technologies || []).slice(0, 6),
             fresh.analysis || null,
+            dev.org_id,
           ]
         );
         updated++;

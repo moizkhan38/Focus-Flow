@@ -135,12 +135,20 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', (socket) => {
-  // Clients join a project room by Jira project key to receive realtime updates.
-  // TODO(1.6): once projects.org_id is enforced, validate the key belongs to
-  // socket.orgId before joining.
-  socket.on('join', (projectKey) => {
-    if (typeof projectKey === 'string' && /^[A-Z][A-Z0-9]{1,9}$/.test(projectKey.toUpperCase())) {
-      socket.join(`project:${projectKey.toUpperCase()}`);
+  // Clients join a project room by Jira project key. The key must belong to a
+  // project in the caller's org — otherwise any org's member could listen to
+  // another org's realtime issue events.
+  socket.on('join', async (projectKey) => {
+    if (typeof projectKey !== 'string' || !/^[A-Z][A-Z0-9]{1,9}$/.test(projectKey.toUpperCase())) return;
+    const key = projectKey.toUpperCase();
+    try {
+      const { rows } = await query(
+        'SELECT 1 FROM projects WHERE jira_project_key = $1 AND org_id = $2 LIMIT 1',
+        [key, socket.orgId]
+      );
+      if (rows.length > 0) socket.join(`project:${key}`);
+    } catch {
+      // deny on error — no room join
     }
   });
   socket.on('leave', (projectKey) => {
