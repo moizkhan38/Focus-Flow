@@ -258,7 +258,7 @@ Standup bot :3000 (Slack signature verified, internal-key to Express, daily remi
 **Accept:** `git grep -n "c:/Users\|C:\\\\Users" -- ':!*.md'` → nothing tracked.
 **Verify (Fable):** grep passes; each `.env.example` contains every Phase-0 var from Appendix A.
 
-### 🚧 GATE G0 — Phase 0 complete `[x]` (1 external caveat — Gemini quota)
+### 🚧 GATE G0 — Phase 0 complete `[x]` ✅ fully green (Gemini caveat RESOLVED via lite model)
 **Fable runs all of:**
 1. All Phase-0 steps `[✓]`.
 2. Full local stack boots (Flask via waitress, Express, bot, `npm run dev`) with new env vars; wizard generate → approve → analyze → assign → **Save Without Jira** works.
@@ -633,4 +633,5 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-15 | 0.8 | ✓ | `npm run migrate` run1 = "1 pending" applied 001_init.sql; run2 = "0 pending"; schema_migrations shows 001_init.sql with applied_at. Idempotent + transactional confirmed. |
 | 2026-07-15 | 0.9 | ✓ | `git grep c:/Users` in tracked non-md source → none; import-standups.js node --check OK; all 4 .env.example files contain their full Phase-0 var set (scripted presence check passed). |
 | 2026-07-15 | model-fix | ✓ | gemini-2.5-flash-lite → 404 for new keys (caught by G0 smoke). Fixed: GEMINI_MODEL env, default gemini-2.0-flash. Request now reaches Gemini; generation blocked only by free-tier quota (429). |
+| 2026-07-15 | model-fix-2 | ✓ | **User's suggestion (use lite) was correct.** Probed all lite variants: flash-lite-latest=200, 3.1-flash-lite=200, 3.1-flash-lite-preview=200, 2.0-flash-lite=429. Default → `gemini-flash-lite-latest` (free quota + alias never 404-deprecates). Full `--ai` smoke: **25 PASS / 0 FAIL** — 4 epics + stories generated end-to-end; parser handles new model output. G0 Gemini caveat CLOSED without billing. Billing still recommended before real client load (D5/Phase 3). |
 | 2026-07-15 | **G0** | ✓* | Full stack booted (Express+Flask+bot). Smoke: **24 PASS / 1 FAIL**; the FAIL is [ai] generate blocked by Gemini **free-tier quota (429)** — external, not a code defect (path + error-handling verified). Secret scan clean; `.env` never committed; forged /slack/events=401, /test/reminder=404, hostile Origin no-ACAO, rate-limit 429; `npm run build` OK, zero localhost in bundle. **CAVEAT (root cause confirmed):** new-user Gemini projects have free-tier `limit: 0` (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`, verified via 429 body) — the old key was grandfathered. Waiting for reset will NOT help. Fix: enable billing on the key's project (D5 pulled forward), or mint a key inside the ORIGINAL grandfathered project if it still exists. |

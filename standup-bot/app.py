@@ -65,7 +65,7 @@ def _gate_requests():
 # Initialize Clients
 slack_client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
 gemini_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash')  # 2.5 gated for new keys; override via GEMINI_MODEL
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-flash-lite-latest')  # lite alias: free-tier quota + never 404-deprecates
 jira = Jira(
     url=os.environ.get("JIRA_URL"),
     username=os.environ.get("JIRA_EMAIL"),

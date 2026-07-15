@@ -29,11 +29,14 @@ class GeminiEpicGenerator:
             )
 
         self.client = genai.Client(api_key=self.api_key)
-        # 2.5-flash models are gated for newly-created API keys; the newest aliases
-        # (flash-latest / 3.x) often 503 under load. gemini-2.0-flash is broadly
-        # available and stable. Override with GEMINI_MODEL (e.g. gemini-flash-latest)
-        # once the key has paid-tier quota.
-        self.model_name = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash')
+        # Model choice (verified 2026-07-15 against a fresh free-tier key):
+        #   - pinned 2.5-flash models  -> 404 gated for new keys
+        #   - 2.0-flash / 2.0-lite     -> free-tier limit 0 (instant 429)
+        #   - flash-latest (non-lite)  -> 503 under load on free tier
+        #   - flash-LITE-latest        -> WORKS with real free-tier quota
+        # The alias auto-tracks the newest lite model so it can't 404-deprecate.
+        # Pin a specific model via GEMINI_MODEL (e.g. gemini-3.1-flash-lite).
+        self.model_name = os.environ.get('GEMINI_MODEL', 'gemini-flash-lite-latest')
 
     def generate_comprehensive_documentation(
         self,
