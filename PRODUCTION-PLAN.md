@@ -236,7 +236,7 @@ Standup bot :3000 (Slack signature verified, internal-key to Express, daily remi
 **Accept:** `npm run build` passes; `grep -r "localhost:3003" dist/assets/*.js` → **zero** matches (the dev fallback is tree-shaken out of prod builds because `import.meta.env.DEV` is statically false).
 **Verify (Fable):** run the grep on a fresh build; `grep -rn "fetch('/api\|fetch(\`/api" src/` → no direct call sites remain outside `lib/api.js`; dev smoke: `npm run dev` + wizard generate still works.
 
-### Step 0.8 — Migration runner: tracking table + transactions `[ ]`
+### Step 0.8 — Migration runner: tracking table + transactions `[x]`
 **Size:** S · **Owner:** Opus
 **Why:** A10. Runner re-applies all files every run, no transaction — a future non-idempotent migration double-applies or half-applies.
 **Files:** `backend/scripts/migrate.js`, `backend/package.json`
@@ -616,6 +616,7 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-14 | 0.5 | `p0.5: harden Express — trust proxy, rate limit, error handler, guards, cron lock` | trust proxy (TRUST_PROXY); body limit 50mb→JSON_BODY_LIMIT(2mb); global /api rate limit (RATE_LIMIT_MAX 300/15m, health registered before it); CORS disallowed→cb(null,false); global error middleware (expose-gated); unhandledRejection/uncaughtException guards; SIGTERM/SIGINT graceful shutdown (io.close+pool.end, 10s force); dev-refresh cron wrapped in pg_try_advisory_lock(823471). .env.example +TRUST_PROXY/JSON_BODY_LIMIT/RATE_LIMIT_MAX. |
 | 2026-07-14 | 0.6 | `p0.6: stop leaking internal errors — sendServerError/sendUpstreamError sweep` | New utils/httpError.js: sendServerError (internal → generic + log) and sendUpstreamError (Jira parseJiraError output → safe passthrough, still logged). Swept 34 sites across db/jira/sync/assignment/epics/developers/standup. Kept: Jira warnings[]/health feedback + server logs + developers.js filtered per-user error (never sent). |
 | 2026-07-15 | 0.7 | `p0.7: frontend env-driven API base + socket URL (VITE_API_URL)` | New src/lib/api.js (API_BASE, SOCKET_URL, apiUrl, apiFetch). Swept 16 direct fetch('/api') sites across 11 files + safeFetchJson wrapper (WorkflowContext ×4) + SWR fetcher (useSprintData) to apiFetch; useRealtime io()→SOCKET_URL. New frontend/.env.example (VITE_API_URL / VITE_SOCKET_URL, public-only note). Dev unchanged (empty API_BASE → Vite proxy). |
+| 2026-07-15 | 0.8 | `p0.8: migration runner — schema_migrations tracking + per-file transactions` | migrate.js: creates schema_migrations(filename PK, applied_at); skips applied files; each pending file runs in BEGIN/COMMIT with ROLLBACK on error. package.json +migrate script. |
 
 # Verification Log (Fable appends; newest last)
 | Date | Step | Result | Evidence |
@@ -628,3 +629,4 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | 2026-07-14 | 0.5 | ✓ | node --check OK; all 9 hardening elements present; GET /api/health=200; hostile Origin → no ACAO header, status 200 (not 500); rate limit exact: 305 reqs → 300×404 + 5×429; backend units 26/26. (SIGTERM handler present + valid; runtime signal behavior deferred to Linux containers in Phase 3.) |
 | 2026-07-14 | 0.6 | ✓ | All 7 routes + helper node --check OK; grep confirms zero err.message on any status(500) line; good-DB smoke green (db CRUD + validation, 19 PASS); forced 500 (bad DB pw) → client gets `{"error":"Internal server error"}`, server log holds real `password authentication failed`. |
 | 2026-07-15 | 0.7 | ✓ | `npm run build` OK (9.9s); grep: no direct fetch('/api') outside lib/api.js; **zero `localhost:3003` in dist/assets/*.js** (DEV fallback tree-shaken); no localhost refs anywhere in bundle. Full wizard-through-apiFetch dev smoke deferred to G0. |
+| 2026-07-15 | 0.8 | ✓ | `npm run migrate` run1 = "1 pending" applied 001_init.sql; run2 = "0 pending"; schema_migrations shows 001_init.sql with applied_at. Idempotent + transactional confirmed. |
