@@ -43,7 +43,8 @@ Unified Scrum automation platform: AI-powered epic/story generation, developer a
 
 1. **Install prerequisites:** Node 20+, Python 3.11+, PostgreSQL 18
 2. **Create database:** `CREATE DATABASE focusflow;`
-3. **Copy the `.env.example` files** in each service folder and fill in your credentials
+3. **Copy the `.env.example` files** in each service folder and fill them in. Jira/GitHub
+   credentials are *not* among them — those are connected per organization from the app (step 7).
 4. **Install deps:**
    ```
    cd epic-dev-assignment/backend && npm install
@@ -53,6 +54,9 @@ Unified Scrum automation platform: AI-powered epic/story generation, developer a
    ```
 5. **Run migrations:** `cd epic-dev-assignment/backend && npm run migrate`
 6. **Start everything** (Windows): `cd epic-dev-assignment && start-all.bat`
+7. **Connect Jira + GitHub** from the app: sign in, create your organization, then go to
+   **Integrations** in the sidebar. These are *not* env vars — each organization connects
+   its own credentials, encrypted per org (see Production notes).
 
 ## Project structure
 
