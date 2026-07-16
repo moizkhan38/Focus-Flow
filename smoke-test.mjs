@@ -10,12 +10,18 @@
  * AUTH ERA (Phase 1+): the API requires a Clerk session with an active org.
  *   - The `authz` section ALWAYS runs unauthenticated and asserts 401s — it is
  *     the proof that enforcement is on.
- *   - The authed sections (validation, db, jira, ai) need a real session token:
+ *   - The authed sections (validation, db, integrations, ai) need a real session token:
  *       SMOKE_AUTH_TOKEN=<jwt> node smoke-test.mjs
  *     Get one from the browser: sign in → devtools console →
  *       await window.Clerk.session.getToken()
  *     (Tokens expire in ~60s — grab it right before running.)
  *   - SMOKE_INTERNAL_KEY=<key> additionally exercises the bot's internal lane.
+ *
+ * PER-ORG ERA (Phase 2+): Jira/GitHub credentials belong to the token's
+ * organization, not the environment. The `integrations` section reads
+ * GET /api/integrations and asserts whichever contract applies: not connected →
+ * 412 JIRA_NOT_CONNECTED / GITHUB_NOT_CONNECTED, connected → the real read paths.
+ * Both are correct outcomes; neither is a regression.
  *
  * SAFETY GUARANTEES:
  *   - Never calls POST /api/ai/sync-jira with valid payloads (would create a
@@ -233,31 +239,71 @@ async function dbChecks() {
   });
 }
 
-// ── Jira (authed, read-only, external dependency → soft) ─────────────────────
+// ── Jira + GitHub: per-org integrations (authed) ──────────────────────────────
+// Phase 2: credentials are per organization, so what "correct" looks like depends
+// on whether THIS token's org has connected them. Both branches are asserted:
+//   not connected → 412 *_NOT_CONNECTED (the contract the UI's connect-CTA rides on)
+//   connected     → the real read paths still work.
 
-async function jiraChecks() {
+async function integrationChecks() {
   if (!AUTH_TOKEN) {
-    record('jira', 'jira read-only checks', 'SKIP', 'set SMOKE_AUTH_TOKEN');
+    record('integrations', 'per-org integration checks', 'SKIP', 'set SMOKE_AUTH_TOKEN');
     return;
   }
-  const healthy = await check('jira', 'GET /api/jira/health → connected', async () => {
-    const r = await http('GET', `${API}/api/jira/health`, undefined, 20000);
-    expect(r.status === 200, `status ${r.status}: ${r.text.slice(0, 120)}`);
-    expect(r.json?.ok !== false, `not ok: ${r.text.slice(0, 120)}`);
-  }, { soft: true });
 
-  if (!healthy) {
-    record('jira', 'GET /api/jira/sprints', 'SKIP', 'jira not connected');
-    return;
+  const status = await http('GET', `${API}/api/integrations`, undefined, 15000);
+  const ok = await check('integrations', 'GET /api/integrations → status, no secrets', async () => {
+    expect(status.status === 200, `status ${status.status}: ${status.text.slice(0, 120)}`);
+    expect(typeof status.json?.jira?.connected === 'boolean', 'missing jira.connected');
+    expect(typeof status.json?.github?.connected === 'boolean', 'missing github.connected');
+    // Tokens are write-only — the status payload must never carry credential material.
+    expect(!/ATATT|ghp_|apiToken|"token"/.test(status.text), 'status response leaked token material');
+    return `jira=${status.json.jira.connected} github=${status.json.github.connected}`;
+  });
+  if (!ok) return;
+
+  const jiraConnected = status.json.jira.connected;
+  const githubConnected = status.json.github.connected;
+
+  // ── Jira ──
+  if (!jiraConnected) {
+    await check('jira', 'not connected → 412 JIRA_NOT_CONNECTED', async () => {
+      const r = await http('GET', `${API}/api/jira/sprints?boardId=1`, undefined, 15000);
+      expect(r.status === 412, `expected 412, got ${r.status}: ${r.text.slice(0, 120)}`);
+      expect(r.json?.error === 'JIRA_NOT_CONNECTED', `wrong code: ${r.text.slice(0, 80)}`);
+    });
+    await check('jira', 'sync-jira not connected → 412', async () => {
+      const r = await http('POST', `${API}/api/ai/sync-jira`, { projectName: 'smoke', epics: [], assignments: [] }, 15000);
+      expect(r.status === 412, `expected 412, got ${r.status}: ${r.text.slice(0, 120)}`);
+    });
+  } else {
+    await check('jira', 'GET /api/jira/sprints?boardId → array', async () => {
+      const boards = await http('GET', `${API}/api/jira/boards`, undefined, 30000);
+      expect(boards.status === 200, `boards ${boards.status}`);
+      const boardId = boards.json?.[0]?.id;
+      if (!boardId) return 'no boards on this Jira site';
+      const r = await http('GET', `${API}/api/jira/sprints?boardId=${boardId}`, undefined, 30000);
+      expect(r.status === 200, `status ${r.status}: ${r.text.slice(0, 120)}`);
+      expect(Array.isArray(r.json), `not an array: ${r.text.slice(0, 80)}`);
+      return `${r.json.length} sprint(s) on board ${boardId}`;
+    }, { soft: true });
+    // boardId is required now — the global JIRA_BOARD_ID fallback is gone (2.5).
+    await check('jira', 'GET /api/jira/sprints without boardId → 400', async () => {
+      const r = await http('GET', `${API}/api/jira/sprints`, undefined, 15000);
+      expect(r.status === 400, `expected 400, got ${r.status}: ${r.text.slice(0, 80)}`);
+    });
   }
-  await check('jira', 'GET /api/jira/sprints → array', async () => {
-    const r = await http('GET', `${API}/api/jira/sprints`, undefined, 30000);
-    // Known config dependency: without JIRA_BOARD_ID set, Jira returns 400
-    // ("Jira API error: 400") — treated as WARN, not a regression.
-    expect(r.status === 200, `status ${r.status}: ${r.text.slice(0, 120)}`);
-    expect(Array.isArray(r.json), `not an array: ${r.text.slice(0, 80)}`);
-    return `${r.json.length} sprint(s)`;
-  }, { soft: true });
+
+  // ── GitHub ──
+  if (!githubConnected) {
+    await check('github', 'not connected → 412 GITHUB_NOT_CONNECTED', async () => {
+      const r = await http('POST', `${API}/api/analyze-developers`, { github_usernames: ['octocat'] }, 20000);
+      expect(r.status === 412, `expected 412, got ${r.status}: ${r.text.slice(0, 120)}`);
+      expect(r.json?.error === 'GITHUB_NOT_CONNECTED', `wrong code: ${r.text.slice(0, 80)}`);
+    });
+  } else {
+    record('github', 'analyze-developers (connected)', 'SKIP', 'live GitHub analysis is slow — covered by G2 E2E');
+  }
 }
 
 // ── Flask generator ──────────────────────────────────────────────────────────
@@ -360,7 +406,7 @@ if (expressUp) {
   await authzChecks();
   await validationChecks();
   await dbChecks();
-  await jiraChecks();
+  await integrationChecks();
   await aiChecks();
 }
 await flaskChecks();
