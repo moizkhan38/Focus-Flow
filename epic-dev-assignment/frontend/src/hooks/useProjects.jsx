@@ -15,8 +15,17 @@ import { apiFetch } from '../lib/api.js';
 // active Clerk organization and refetched when it changes — nothing tenant-owned
 // lives in localStorage anymore (closes the cross-account leak finding).
 
-const LEGACY_KEY = 'focus-flow-projects';
 const SAVE_DEBOUNCE_MS = 800;
+
+// Pre-1.7 localStorage keys. Dead since the server became the source of truth —
+// purged on app start so data from one account can never surface for another
+// account on a shared browser (confirmed leak vector during G1 testing).
+const DEAD_LEGACY_KEYS = [
+  'focus-flow-projects',
+  'focus-flow-projects.migrated',
+  'focus-flow-developers',
+  'focus-flow-retros',
+];
 
 function toClient(row) {
   // `raw` is the source of truth; id from the column for safety.
@@ -36,16 +45,6 @@ function toRow(p) {
     sprint_count: p.sprintCount || 1,
     raw: p,
   };
-}
-
-function readLegacy() {
-  try {
-    const stored = localStorage.getItem(LEGACY_KEY);
-    const parsed = stored ? JSON.parse(stored) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
 }
 
 const ProjectsContext = createContext(null);
@@ -84,6 +83,13 @@ export function ProjectsProvider({ children }) {
     setProjects([]); // never show another org's (or a signed-out) state
     refresh();
   }, [refresh]);
+
+  // One-time cleanup of dead pre-1.7 tenant data in this browser.
+  useEffect(() => {
+    try {
+      DEAD_LEGACY_KEYS.forEach((k) => localStorage.removeItem(k));
+    } catch { /* non-fatal */ }
+  }, []);
 
   // ── Persistence ────────────────────────────────────────────────────────────
   const saveToServer = useCallback(async (project) => {
@@ -231,28 +237,6 @@ export function ProjectsProvider({ children }) {
     }));
   }, [applyChange]);
 
-  // ── One-time import of pre-1.7 localStorage projects ──────────────────────
-  const legacyProjects = readLegacy();
-  const hasLegacyData = legacyProjects.length > 0;
-
-  const importLegacyProjects = useCallback(async () => {
-    const legacy = readLegacy();
-    let imported = 0;
-    for (const p of legacy) {
-      if (!p?.id) continue;
-      // eslint-disable-next-line no-await-in-loop
-      await saveToServer(p);
-      imported++;
-    }
-    // Park the old data under a .migrated key instead of destroying it.
-    try {
-      localStorage.setItem(`${LEGACY_KEY}.migrated`, localStorage.getItem(LEGACY_KEY) || '[]');
-      localStorage.removeItem(LEGACY_KEY);
-    } catch { /* quota — non-fatal */ }
-    await refresh();
-    return imported;
-  }, [saveToServer, refresh]);
-
   const value = {
     projects,
     isLoaded,
@@ -269,9 +253,6 @@ export function ProjectsProvider({ children }) {
     setAssignments,
     deleteProject,
     syncJiraProgress,
-    // 1.7 migration helpers
-    hasLegacyData,
-    importLegacyProjects,
     refreshProjects: refresh,
   };
 

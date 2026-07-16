@@ -149,7 +149,7 @@ const cardVariants = {
 };
 
 export default function ProjectsPage() {
-  const { projects, isLoaded, deleteProject, addProject, hasLegacyData, importLegacyProjects } = useProjects();
+  const { projects, isLoaded, deleteProject, addProject } = useProjects();
   const { templates, saveAsTemplate, deleteTemplate } = useTemplates();
   const [showTemplates, setShowTemplates] = useState(false);
   const [templateSaved, setTemplateSaved] = useState(null);
@@ -301,22 +301,6 @@ export default function ProjectsPage() {
           {aggregateStats.avgVelocity !== null && (
             <MiniStat icon={TrendingUp} value={aggregateStats.avgVelocity} label="Avg Velocity" color="amber" />
           )}
-        </div>
-      )}
-
-      {/* One-time import of pre-1.7 locally-saved projects */}
-      {projects.length === 0 && hasLegacyData && (
-        <div className="mb-6 flex items-center justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
-          <p className="text-sm text-amber-800">
-            Projects saved in this browser before your account was created can be imported
-            into your organization.
-          </p>
-          <button
-            onClick={() => importLegacyProjects()}
-            className="shrink-0 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 transition-all"
-          >
-            Import projects
-          </button>
         </div>
       )}
 
