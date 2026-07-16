@@ -3,6 +3,14 @@
 **Read this first, then `PRODUCTION-PLAN.md` (the master plan + execution/verification logs).**
 This file exists so a fresh agent can continue without re-deriving anything.
 
+> ⚠️ **`.claude/CLAUDE.md` IS STALE.** It auto-loads into your context and still describes
+> the PRE-MIGRATION app: localStorage persistence, `admin/1234` login, global `JIRA_API_TOKEN`
+> env creds, no auth on the API. Where it conflicts with this file or PRODUCTION-PLAN.md,
+> **this file wins**. CLAUDE.md's still-valid parts: frontend styling conventions (Tailwind
+> semantic utilities, flat PostCSS, lucide-react, light theme default), the wizard flow, the
+> Jira sync step-by-step, data transforms, and the auto-commit-after-build policy. Plan step
+> 3.7 rewrites it properly.
+
 ## What this project is
 
 Focus Flow — AI-powered Scrum automation being converted from a localhost demo into a
@@ -21,7 +29,7 @@ Four services (all env-driven, see `.env.example` files):
 PowerShell `Start-Process -WindowStyle Hidden` with `-WorkingDirectory` per service.
 Postgres 18 runs as a Windows service (`postgresql-x64-18`), db `focusflow`.
 
-## Where we are: Phase 0 ✅ G0 ✅ Phase 1 ✅ G1 ✅ — next is PHASE 2
+## Where we are: Phase 0 ✅ G0 ✅ Phase 1 ✅ G1 ✅ Phase 2 code ✅ — **next is GATE G2 (needs the user)**
 
 **Phase 0 (p0.0–p0.9)** — hardening: all 5 leaked secrets rotated + verified live; hardcoded
 DB password removed (was in git history — rotated, moot); Flask debug-RCE killed + internal-key
@@ -86,8 +94,12 @@ regenerate it one more time (3-min task, non-blocking; noted in plan exec log).
   sweep; `SMOKE_AUTH_TOKEN=<clerk-jwt>` (from browser: `await window.Clerk.session.getToken()`,
   expires ~60s) unlocks authed sections; `SMOKE_INTERNAL_KEY=<key>` tests the bot lane;
   `--ai` runs one real Gemini generation. See `TESTING.md`.
-- Unit suites: backend `npm test` (26), frontend `npm test` (18), Flask
-  `venv/Scripts/python.exe -m unittest discover -s tests` (21), bot same with `.venv` (9).
+- Unit suites: backend `npm test` (**32** — +6 crypto envelope), frontend `npm test` (18), Flask
+  `venv/Scripts/python.exe -m unittest discover -s tests` (**22**), bot same with `.venv` (**10**).
+  ⚠️ The Flask/bot HTTP tests were silently red for a while: the internal-key gate reads
+  `INTERNAL_API_KEY` at import and step 1.4 put that key in every service `.env`, so validation
+  tests 401'd instead of 400'ing. They now send the key when it's configured (fixed 2026-07-16).
+  **If a Python suite goes red with `401 != 400`, that's this — not your change.**
 - Rule: any intentional contract change must update the harness IN THE SAME COMMIT.
 
 ## Working conventions with this user
@@ -103,19 +115,48 @@ regenerate it one more time (3-min task, non-blocking; noted in plan exec log).
 - Windows quirks: bash background tasks report exit 127 when killed externally (not a real
   failure); CRLF warnings on commit are noise; use `curl.exe`/PowerShell carefully re quoting.
 
-## NEXT: Phase 2 — per-org Jira & GitHub (the SaaS core), steps 2.1–2.8
+## Phase 2 ✅ (all 8 steps implemented, 2026-07-16) — per-org Jira & GitHub
 
-Global `JIRA_*`/`GITHUB_TOKEN` env creds must die; each org connects its own via Settings UI.
-Per the plan: 2.1 `org_integrations` table (migration 005 — note: 004 is taken by developers.email)
-→ 2.2 envelope-encryption `cryptoService` (AES-256-GCM, per-secret DEK wrapped by
-`CREDENTIALS_MASTER_KEY` env; KMS-ready seam) → 2.3 `credentialProvider` (TTL cache,
-`IntegrationNotConnectedError`) → 2.4 integrations API (admin-only writes via `orgRole`,
-test-before-save against Jira/GitHub, never return tokens) → 2.5 `jiraService` → per-org client
-factory (biggest refactor; per-domain field cache; callers in routes/jira.js + sync.js; 412
-`JIRA_NOT_CONNECTED`) → 2.6 `githubService` per-org token + per-org `developerRefresher`
-(412 `GITHUB_NOT_CONNECTED`) → 2.7 Settings UI (connect cards, status, not-connected empty
-states, SyncButton tooltip) → 2.8 remove global cred envs. Gate G2 = two-org integration
-isolation + full Jira sync E2E on org A while org B gets 412s.
+Global `JIRA_*`/`GITHUB_TOKEN` are **gone** (zero reads in backend src). Each org connects its
+own credentials, envelope-encrypted per org. The chain:
+
+```
+routes/{jira,sync,developers}.js → jiraClientFor(req.orgId) / githubClientFor(req.orgId)
+  → credentialProvider (5-min TTL cache) → org_integrations (AES-256-GCM, cryptoService)
+    → createJiraClient({domain,email,apiToken}) / createGithubClient(token)
+```
+
+- **412 is the not-connected contract**: `{success:false, error:'JIRA_NOT_CONNECTED'|'GITHUB_NOT_CONNECTED'}`,
+  mapped in `utils/httpError.js` + the global error middleware. Frontend: `ApiError.notConnected`
+  (`lib/api.js`) → `<NotConnected provider="..."/>` CTA. **Not-connected is a normal new-org state, never an error banner.**
+- **Settings UI is NEW** (`pages/Settings.jsx` + `/settings` + sidebar "Configuration → Integrations").
+  The plan said to repurpose `pages/jira/Settings.jsx` — it never existed. Tokens are write-only;
+  admin-only writes (`requireOrgAdmin` → 403 `ORG_ADMIN_REQUIRED`).
+- **Contract changes to know**: `getSprints` now REQUIRES boardId → `GET /api/jira/sprints` 400s
+  without `?boardId` (the app uses `/jira/board/:boardId/sprints` via `useBoardSprints`; `useSprints`
+  is dead code). Field-discovery cache is per-domain and **only caches successes** — caching a
+  failure would let one org's 401 poison every org on that Jira domain (caught in adversarial review).
+- `POST /api/db/developers/refresh` now refreshes **only the caller's org** (it used to sweep every
+  org — with per-org tokens that would burn other tenants' GitHub rate limits). The daily cron still
+  sweeps all orgs, skipping those without GitHub connected.
+- Migration **005** = `org_integrations` (004 was `developers_email`).
+
+## NEXT: 🚧 GATE G2 — needs the user (5 min of clicking, then scripted checks)
+
+Everything scripted is green; G2's remaining items all need a **real Jira connected through the UI**:
+
+1. **USER**: start the stack → sign in → sidebar **Integrations** → connect Jira (domain/email/API
+   token) + GitHub (PAT). ⚠️ **The values are still in `epic-dev-assignment/backend/.env`** (dead
+   entries — nothing reads them). Copy them from there into the UI, THEN delete those 5 lines
+   (`JIRA_DOMAIN/JIRA_EMAIL/JIRA_API_TOKEN/JIRA_BOARD_ID/GITHUB_TOKEN`) from the local `.env`.
+   This is deliberately left undone: deleting first would destroy the credentials needed to connect.
+2. Then run the authed harness: `SMOKE_AUTH_TOKEN=<jwt> node smoke-test.mjs` — the `integrations`
+   section auto-asserts the *connected* branch (boards→sprints, 400 without boardId).
+3. Remaining G2 checklist: two-org isolation (A connected, B gets 412s, B can't see A's status);
+   full sync E2E on org A (project+board+sprints+stories+assignees+invites); non-admin PUT → 403;
+   logs/`GET /api/integrations` carry no token material.
+
+**Then Phase 3** (Docker/logging/health/CI/hosting D3/deploy) — 3.7 rewrites CLAUDE.md properly.
 
 Decisions locked: D1 encrypted tokens now/OAuth Phase 4 · D2 Clerk · D3 hosting deferred ·
 D4 Postgres persistence · D5 platform Gemini key · D6 bot single-workspace v1.
