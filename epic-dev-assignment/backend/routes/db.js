@@ -2,7 +2,7 @@ import express from 'express';
 import { sendServerError } from '../utils/httpError.js';
 import { requireOrg, orgOrInternal } from '../middleware/auth.js';
 import { query, ping } from '../db.js';
-import { refreshAllDevelopers } from '../services/developerRefresher.js';
+import { refreshDevelopersForOrg } from '../services/developerRefresher.js';
 
 const router = express.Router();
 
@@ -256,11 +256,12 @@ router.delete('/db/developers/:username', async (req, res) => {
   }
 });
 
-// Manually trigger a refresh of every developer's GitHub stats.
-// The same job runs automatically on a daily cron (see server.js).
+// Manually trigger a refresh of THIS org's developer GitHub stats, using this
+// org's own GitHub token (412 when it hasn't connected one). The daily cron in
+// server.js runs the same job across every org.
 router.post('/db/developers/refresh', async (req, res) => {
   try {
-    const summary = await refreshAllDevelopers();
+    const summary = await refreshDevelopersForOrg(req.orgId);
     // Return the freshly-updated rows for THIS org so the frontend can replace its cache.
     const { rows } = await query(
       `SELECT * FROM developers WHERE org_id = $1 ORDER BY username`,

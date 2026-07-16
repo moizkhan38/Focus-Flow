@@ -1,10 +1,13 @@
 import express from 'express';
 import { sendServerError } from '../utils/httpError.js';
-import { analyzeDeveloper } from '../services/githubService.js';
+import { githubClientFor } from '../services/githubClientFor.js';
 import { query } from '../db.js';
 
 const router = express.Router();
 // Auth: enforced by the default-closed /api gate in server.js.
+// GitHub credentials are per-org (Phase 2): the handler resolves the caller's
+// org client via githubClientFor(req.orgId); orgs without a connected GitHub
+// get 412 GITHUB_NOT_CONNECTED (mapped in utils/httpError.js).
 
 // POST /api/analyze-developers - Analyze multiple developers
 // Accepts either:
@@ -26,6 +29,10 @@ router.post('/analyze-developers', async (req, res) => {
       });
     }
 
+    // Resolve this org's GitHub client once — throws IntegrationNotConnectedError
+    // (→ 412) before any work when the org hasn't connected GitHub.
+    const gh = await githubClientFor(req.orgId);
+
     // Analyze all developers in parallel for speed
     const results = await Promise.all(
       devList
@@ -36,7 +43,7 @@ router.post('/analyze-developers', async (req, res) => {
         .map(async (dev) => {
           const username = typeof dev === 'string' ? dev : dev.username;
           try {
-            return await analyzeDeveloper(
+            return await gh.analyzeDeveloper(
               username,
               dev.owner || username,
               dev.repo
