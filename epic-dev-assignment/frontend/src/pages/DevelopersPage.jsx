@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react';
-import { apiFetch } from '../lib/api.js';
+import { apiFetch, humanizeError } from '../lib/api.js';
 import { useDevelopers } from '../hooks/useDevelopers';
 import { useProjects } from '../hooks/useProjects';
+import { useIntegrations } from '../hooks/useIntegrations';
+import NotConnected from '../components/shared/NotConnected';
 import {
   Users, Search, Trash2, Save, ChevronDown, ChevronRight,
   Briefcase, GitBranch, Award, AlertCircle, Plus, X, Loader2, UserPlus,
@@ -13,6 +15,9 @@ export default function DevelopersPage() {
   const { developers, addDevelopers, updateJiraUsername, updateEmail, updateAvailability, removeDeveloper, isLoaded } = useDevelopers();
   const { projects } = useProjects();
   const { notify } = useNotifications();
+  const { github, isLoading: integrationsLoading } = useIntegrations();
+  // Analysis + the refresh job both read GitHub through the org's own token.
+  const githubBlocked = !integrationsLoading && !github?.connected;
   const [search, setSearch] = useState('');
   const [editingJira, setEditingJira] = useState({});
   const [editingEmail, setEditingEmail] = useState({});
@@ -55,7 +60,7 @@ export default function DevelopersPage() {
         `${data.updated}/${data.total} updated from GitHub${data.failed ? ` (${data.failed} failed)` : ''}`
       );
     } catch (err) {
-      notify.error('Refresh Failed', err.message);
+      notify.error('Refresh Failed', humanizeError(err));
     } finally {
       setRefreshing(false);
     }
@@ -209,7 +214,7 @@ export default function DevelopersPage() {
       setShowAddForm(false);
       setAnalyzeProgress('');
     } catch (err) {
-      setAnalyzeError(err.message);
+      setAnalyzeError(humanizeError(err));
       notify.error('Analysis Failed', err.message);
     } finally {
       timers.forEach(clearTimeout);
@@ -266,6 +271,12 @@ export default function DevelopersPage() {
           <p className="text-xs text-gray-500 mb-4">
             Enter GitHub usernames to analyze commits & expertise. Add a Jira email so they can be invited to Jira and assigned issues automatically.
           </p>
+
+          {githubBlocked && (
+            <div className="mb-4">
+              <NotConnected provider="github" compact />
+            </div>
+          )}
 
           <div className="space-y-2">
             {newDevInputs.map((d, i) => (

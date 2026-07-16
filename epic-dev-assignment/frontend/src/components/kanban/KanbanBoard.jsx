@@ -4,6 +4,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Flame, RefreshCw, AlertCircle, X, Search, Columns3, WifiOff, Inbox } from 'lucide-react';
 import { normalizeStatus } from '../../hooks/useKanbanSync';
+import NotConnected from '../shared/NotConnected';
 
 // ─── Column & Card Styling ────────────────────────────────────────────────
 const colConfig = {
@@ -234,6 +235,11 @@ export default function KanbanBoard({ kanban, variant = 'full', title }) {
         <p className="text-xs text-gray-400 mt-1">Go to the Assign page to sync epics and stories.</p>
       </div>
     );
+  }
+
+  // Org hasn't connected Jira — offer the fix rather than an error to retry.
+  if (kanban.jiraNotConnected) {
+    return <NotConnected provider="jira" compact={isMini} />;
   }
 
   if (kanban.connectionError) {

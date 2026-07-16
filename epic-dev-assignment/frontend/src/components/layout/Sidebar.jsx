@@ -7,6 +7,7 @@ import {
   Users,
   LayoutDashboard,
   LogOut,
+  Plug,
 } from 'lucide-react';
 
 const navSections = [
@@ -22,6 +23,12 @@ const navSections = [
     label: 'Overview',
     items: [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: 'Configuration',
+    items: [
+      { to: '/settings', label: 'Integrations', icon: Plug },
     ],
   },
 ];

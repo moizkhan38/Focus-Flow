@@ -1,5 +1,7 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { apiFetch } from '../../lib/api.js';
+import { apiFetch, humanizeError } from '../../lib/api.js';
+import { useIntegrations } from '../../hooks/useIntegrations';
+import NotConnected from '../../components/shared/NotConnected';
 import { useEffect, useState, useMemo } from 'react';
 import { useProjects } from '../../hooks/useProjects';
 import { useDevelopers } from '../../hooks/useDevelopers';
@@ -44,6 +46,9 @@ export default function AssignPage() {
   const [sprintCount, setSprintCount] = useState(project?.sprintCount || 1);
   const [expandedEpics, setExpandedEpics] = useState({});
   const [showAddNew, setShowAddNew] = useState(false);
+  const { github, isLoading: integrationsLoading } = useIntegrations();
+  // Analyzing reads commit history through the org's own GitHub token.
+  const githubBlocked = !integrationsLoading && !github?.connected;
   const [reassigningStoryId, setReassigningStoryId] = useState(null);
   // Auto-populate Jira mapping from roster.
   // Priority: project's saved map > roster.email > roster.jiraUsername
@@ -128,7 +133,7 @@ export default function AssignPage() {
       setGithubUsernames(['']);
       setShowAddNew(false);
     } catch (err) {
-      setError(err.message);
+      setError(humanizeError(err));
     } finally {
       setIsAnalyzing(false);
     }
@@ -337,6 +342,11 @@ export default function AssignPage() {
         {/* Add new developers */}
         {(availableRosterDevs.length === 0 || showAddNew) ? (
           <div>
+            {githubBlocked && (
+              <div className="mb-3">
+                <NotConnected provider="github" compact />
+              </div>
+            )}
             <div className="space-y-2">
               {githubUsernames.map((username, i) => (
                 <div key={i} className="flex items-center gap-2">

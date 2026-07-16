@@ -1,14 +1,9 @@
 import useSWR from 'swr';
-import { apiFetch } from '../lib/api.js';
+import { apiJson } from '../lib/api.js';
 
-async function fetcher(url) {
-  const res = await apiFetch(url);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Request failed: ${res.status}`);
-  }
-  return res.json();
-}
+// Errors surface as ApiError, so consumers can branch on err.notConnected
+// (412 JIRA_NOT_CONNECTED) and render a connect CTA instead of a red banner.
+const fetcher = (url) => apiJson(url);
 
 export function useSprints() {
   const { data, error, isLoading } = useSWR('/api/jira/sprints', fetcher, {

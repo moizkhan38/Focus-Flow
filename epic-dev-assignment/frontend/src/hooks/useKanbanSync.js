@@ -57,8 +57,13 @@ export function useKanbanSync(projectKey, sprintId) {
   // Prefer project-level issues (all stories across all sprints)
   const rawIssues = projectIssues.length > 0 ? projectIssues : sprintIssuesRaw;
   const isLoading = projectKey ? projectLoading : sprintLoading;
-  const connectionError = projectError || sprintError || null;
+  const fetchError = projectError || sprintError || null;
   const mutateIssues = projectKey ? mutateProjectIssues : mutateSprintIssues;
+
+  // The org hasn't connected Jira (412) — a "connect it" state, not a failure.
+  // Kept out of connectionError so the board shows a CTA, not a red retry banner.
+  const jiraNotConnected = fetchError?.notConnected === true;
+  const connectionError = jiraNotConnected ? null : fetchError;
 
   // === Optimistic Updates ===
   const [pendingMoves, setPendingMoves] = useState({});
@@ -211,6 +216,7 @@ export function useKanbanSync(projectKey, sprintId) {
     isEmpty,
     isNotSynced,
     connectionError,
+    jiraNotConnected,
     isDragLocked,
 
     // Actions

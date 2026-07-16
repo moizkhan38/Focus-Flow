@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useProjects } from '../../hooks/useProjects';
 import { useSprintIssues, useProjectIssues, useBurndownData, useSprintDetails } from '../../hooks/useSprintData';
 import { useAlerts } from '../../hooks/useAlerts';
+import NotConnected from '../../components/shared/NotConnected';
 import { calculateHealthScore } from '../../utils/healthScore';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -715,8 +716,11 @@ function SyncedProjectView({ project }) {
   const { developers: rosterDevs } = useDevelopers();
   const [assigningKey, setAssigningKey] = useState(null);
   const [assignError, setAssignError] = useState(null);
-  const { issues: projectIssues, isLoading: projectIssuesLoading, mutate: mutateProjectIssues } = useProjectIssues(projectKey);
-  const { issues: sprintIssues, isLoading: sprintIssuesLoading, mutate: mutateSprintIssues } = useSprintIssues(sprintId);
+  const { issues: projectIssues, isLoading: projectIssuesLoading, error: projectIssuesError, mutate: mutateProjectIssues } = useProjectIssues(projectKey);
+  const { issues: sprintIssues, isLoading: sprintIssuesLoading, error: sprintIssuesError, mutate: mutateSprintIssues } = useSprintIssues(sprintId);
+  // This project was synced to Jira, but the org has since disconnected it —
+  // explain the empty charts instead of rendering silent zeros.
+  const jiraNotConnected = (projectIssuesError || sprintIssuesError)?.notConnected === true;
   // Prefer project-level issues (gets all stories across all sprints); fall back to sprint issues
   const issues = projectIssues.length > 0 ? projectIssues : sprintIssues;
   const issuesLoading = projectKey ? projectIssuesLoading : sprintIssuesLoading;
@@ -825,6 +829,9 @@ function SyncedProjectView({ project }) {
 
   return (
     <div className="space-y-6">
+      {/* Jira disconnected since this project was synced — Jira-backed panels below stay empty */}
+      {jiraNotConnected && <NotConnected provider="jira" compact />}
+
       {/* Completed Project Summary */}
       {project.status === 'completed' && <CompletedProjectSummary project={project} />}
 

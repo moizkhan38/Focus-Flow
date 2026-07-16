@@ -31,6 +31,7 @@ import VerifyPage from './pages/projects/VerifyPage'
 import AssignPage from './pages/projects/AssignPage'
 import DevelopersPage from './pages/DevelopersPage'
 import Dashboard from './pages/jira/Dashboard'
+import Settings from './pages/Settings'
 
 // Theme context (kept for existing workflow compatibility)
 const ThemeContext = createContext({ theme: 'light', toggleTheme: () => {}, isDark: false })
@@ -192,6 +193,11 @@ function App() {
             {/* Jira monitoring */}
             <Route path="/dashboard" element={
               <AuthGuard><SidebarLayout><Dashboard /></SidebarLayout></AuthGuard>
+            } />
+
+            {/* Per-org integrations (Jira / GitHub) */}
+            <Route path="/settings" element={
+              <AuthGuard><SidebarLayout><Settings /></SidebarLayout></AuthGuard>
             } />
 
             {/* Catch-all */}

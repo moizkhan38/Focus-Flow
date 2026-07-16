@@ -1,8 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
-import { apiFetch } from '../../lib/api.js';
+import { apiFetch, humanizeError } from '../../lib/api.js';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useDevelopers } from '../../hooks/useDevelopers';
 import { useProjects } from '../../hooks/useProjects';
+import { useIntegrations } from '../../hooks/useIntegrations';
+import NotConnected from '../shared/NotConnected';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, Users, Loader2, ChevronDown, Check, UserPlus } from 'lucide-react';
 import { SkeletonDevCard } from '../shared/Skeleton';
@@ -98,6 +100,10 @@ export default function Step3_DeveloperAnalysis() {
     }
     return result;
   }, [projects]);
+
+  const { github, isLoading: integrationsLoading } = useIntegrations();
+  // Analyzing reads commit history through the org's own GitHub token.
+  const githubBlocked = !integrationsLoading && !github?.connected;
 
   const [showNewForm, setShowNewForm] = useState(false);
   const [devInputs, setDevInputs] = useState([{ username: '', owner: '', repo: '', jiraEmail: '' }]);
@@ -229,7 +235,7 @@ export default function Step3_DeveloperAnalysis() {
         setShowNewForm(false);
       }
     } catch (err) {
-      setError(err.message);
+      setError(humanizeError(err));
     } finally {
       timers.forEach(clearTimeout);
       setLoading(false);
@@ -369,6 +375,11 @@ export default function Step3_DeveloperAnalysis() {
 
         {(showNewForm || rosterDevs.length === 0) && (
           <>
+            {githubBlocked && (
+              <div className="mb-3">
+                <NotConnected provider="github" compact />
+              </div>
+            )}
             <div className="space-y-3">
               {devInputs.map((dev, index) => (
                 <motion.div

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { apiFetch } from '../../lib/api.js';
 import { Upload, Loader2, CheckCircle2, AlertCircle, AlertTriangle, Users, FolderPlus, GitBranch, UserPlus, Play, Mail } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useIntegrations } from '../../hooks/useIntegrations';
+import NotConnected from '../shared/NotConnected';
 
 const SYNC_STEPS = [
   { key: 'project', label: 'Creating Jira project...', icon: FolderPlus, duration: 2500 },
@@ -20,8 +22,14 @@ export default function SyncButton({ epics, assignments, dependencies, deadline,
   const [syncWarnings, setSyncWarnings] = useState([]);
   const [invitedDevs, setInvitedDevs] = useState([]);
 
+  const { jira, isLoading: integrationsLoading } = useIntegrations();
+
   const approvedEpics = (epics || []).filter((e) => e.status === 'approved');
-  const canSync = approvedEpics.length >= 2;
+  const jiraConnected = jira?.connected;
+  // Don't gate on status we haven't loaded yet — the backend is the real
+  // authority (412) if this is somehow wrong.
+  const jiraBlocked = !integrationsLoading && !jiraConnected;
+  const canSync = approvedEpics.length >= 2 && !jiraBlocked;
 
   // Animate through progress steps while syncing
   useEffect(() => {
@@ -124,10 +132,14 @@ export default function SyncButton({ epics, assignments, dependencies, deadline,
 
   return (
     <div className="space-y-3">
+      {jiraBlocked && <NotConnected provider="jira" compact />}
+
       <p className="text-sm text-gray-600">
         {canSync
           ? `${approvedEpics.length} approved epics will be synced across ${sprintCount || 1} sprint${(sprintCount || 1) > 1 ? 's' : ''}. A new Jira project will be created automatically. Developers will be added to the team.`
-          : 'At least 2 approved epics are required to sync to Jira.'}
+          : jiraBlocked
+            ? 'Connect your organization’s Jira before syncing.'
+            : 'At least 2 approved epics are required to sync to Jira.'}
       </p>
 
       {error && (
@@ -179,6 +191,13 @@ export default function SyncButton({ epics, assignments, dependencies, deadline,
       <motion.button
         onClick={handleSync}
         disabled={!canSync || status === 'syncing'}
+        title={
+          jiraBlocked
+            ? 'Connect Jira in Settings → Integrations to enable syncing'
+            : approvedEpics.length < 2
+              ? 'Approve at least 2 epics to sync'
+              : undefined
+        }
         className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
         whileHover={canSync && status !== 'syncing' ? { scale: 1.02 } : {}}
         whileTap={canSync && status !== 'syncing' ? { scale: 0.97 } : {}}
