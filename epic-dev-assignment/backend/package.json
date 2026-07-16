@@ -8,6 +8,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "migrate": "node scripts/migrate.js",
+    "crypto-selftest": "node scripts/crypto-selftest.js",
     "test": "node --test"
   },
   "dependencies": {
