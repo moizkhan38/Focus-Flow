@@ -29,7 +29,7 @@ Four services (all env-driven, see `.env.example` files):
 PowerShell `Start-Process -WindowStyle Hidden` with `-WorkingDirectory` per service.
 Postgres 18 runs as a Windows service (`postgresql-x64-18`), db `focusflow`.
 
-## Where we are: Phase 0 ✅ G0 ✅ Phase 1 ✅ G1 ✅ Phase 2 code ✅ — **next is GATE G2 (needs the user)**
+## Where we are: Phase 0 ✅ G0 ✅ Phase 1 ✅ G1 ✅ Phase 2 ✅ G2 ✅ — **next is PHASE 3 (infra/launch)**
 
 **Phase 0 (p0.0–p0.9)** — hardening: all 5 leaked secrets rotated + verified live; hardcoded
 DB password removed (was in git history — rotated, moot); Flask debug-RCE killed + internal-key
@@ -141,22 +141,35 @@ routes/{jira,sync,developers}.js → jiraClientFor(req.orgId) / githubClientFor(
   sweeps all orgs, skipping those without GitHub connected.
 - Migration **005** = `org_integrations` (004 was `developers_email`).
 
-## NEXT: 🚧 GATE G2 — needs the user (5 min of clicking, then scripted checks)
+## G2 ✅ PASSED (2026-07-16) — what's live right now
 
-Everything scripted is green; G2's remaining items all need a **real Jira connected through the UI**:
+Org `org_3GXt…kPn` has Jira (`moix3838.atlassian.net`, 3 boards) + GitHub (`moizkhan38`, repo scope)
+connected through the UI, both verified against the live APIs. **backend/.env no longer contains any
+Jira/GitHub credential** — the app was restarted on the cleaned file and proven to run entirely from
+the encrypted per-org store. The 0.1 GitHub-PAT follow-up is **CLOSED** (regenerated; old one 401s).
+Synced project **TP1** exists in their Jira: scrum board 68, active sprint 36, 4 stories, points 4/4,
+assignees 3/4.
 
-1. **USER**: start the stack → sign in → sidebar **Integrations** → connect Jira (domain/email/API
-   token) + GitHub (PAT). ⚠️ **The values are still in `epic-dev-assignment/backend/.env`** (dead
-   entries — nothing reads them). Copy them from there into the UI, THEN delete those 5 lines
-   (`JIRA_DOMAIN/JIRA_EMAIL/JIRA_API_TOKEN/JIRA_BOARD_ID/GITHUB_TOKEN`) from the local `.env`.
-   This is deliberately left undone: deleting first would destroy the credentials needed to connect.
-2. Then run the authed harness: `SMOKE_AUTH_TOKEN=<jwt> node smoke-test.mjs` — the `integrations`
-   section auto-asserts the *connected* branch (boards→sprints, 400 without boardId).
-3. Remaining G2 checklist: two-org isolation (A connected, B gets 412s, B can't see A's status);
-   full sync E2E on org A (project+board+sprints+stories+assignees+invites); non-admin PUT → 403;
-   logs/`GET /api/integrations` carry no token material.
+**G2 residuals** (known, not blocking — pick up if convenient):
+- non-admin → 403 never exercised (needs a 2nd member in the Clerk org; backend gate is unit-covered).
+- The Jira invite-by-email path never fired: only `moizkhan38` has an email on the roster and he
+  already has a Jira account. Devs without emails (`Saqibnawazkhan`, `Musak7`) can't be resolved →
+  their stories sync unassigned. That's by design, and it's why TP1 has 1 unassigned story.
+- Authed smoke connected-branch unrun (needs a 60s browser token: `await window.Clerk.session.getToken()`).
 
-**Then Phase 3** (Docker/logging/health/CI/hosting D3/deploy) — 3.7 rewrites CLAUDE.md properly.
+**Found during G2, pre-existing, worth cleaning in Phase 3/4:** the `assignments` table is **never
+written** — its org-scoped API (1.6) has no caller; assignments actually persist inside
+`projects.raw` JSONB. Nothing is lost, but the table + endpoints are dead weight. Also, Jira
+auto-creates an empty dateless "<KEY> Sprint 1" with every new Scrum board — not ours, ignore it.
+
+## NEXT: PHASE 3 — production infra & launch (3.1–3.7)
+
+3.1 Dockerfiles + compose (prod parity) → 3.2 structured logging + request IDs (pino) → 3.3
+`/api/ready` readiness probe → 3.4 CI (build + gitleaks secret scan) → **3.5 hosting decision D3
+= USER-ACTION** (managed PaaS vs single VPS) + `DEPLOYMENT.md` → 3.6 deploy + prod smoke →
+**3.7 rewrite `.claude/CLAUDE.md`** (it's gitignored, so local-only; already carries a correct
+"Per-Org Integrations" section added in 2.8, but the auth/persistence/localStorage claims elsewhere
+are still pre-migration). Gate G3 = launch.
 
 Decisions locked: D1 encrypted tokens now/OAuth Phase 4 · D2 Clerk · D3 hosting deferred ·
 D4 Postgres persistence · D5 platform Gemini key · D6 bot single-workspace v1.
