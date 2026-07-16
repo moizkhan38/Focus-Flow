@@ -109,6 +109,11 @@ app.use('/api', integrationsRouter);
 // Global error handler (last middleware). Log the real error; return a safe message.
 // Only errors explicitly marked expose:true reveal their message to the client.
 app.use((err, req, res, _next) => {
+  if (err?.name === 'IntegrationNotConnectedError') {
+    // Org hasn't connected this provider — actionable 412, not a server fault.
+    if (!res.headersSent) res.status(412).json({ success: false, error: err.code });
+    return;
+  }
   console.error('[API] Unhandled error:', err);
   if (res.headersSent) return;
   res.status(err.status || 500).json({

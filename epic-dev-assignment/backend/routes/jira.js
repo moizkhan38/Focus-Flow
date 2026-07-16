@@ -1,30 +1,20 @@
 import express from 'express';
 import { sendUpstreamError } from '../utils/httpError.js';
 import { emitToProject } from '../io.js';
-import {
-  getBoards,
-  getSprints,
-  getSprintDetails,
-  getSprintIssues,
-  getProjectIssues,
-  getBurndownData,
-  getIssueTransitions,
-  transitionIssue,
-  assignIssue,
-  searchUser,
-  testConnection,
-  closeSprint,
-  startSprint,
-  moveIssueToSprint,
-  isDoneCategory,
-} from '../services/jiraService.js';
+import { jiraClientFor } from '../services/jiraClientFor.js';
+import { getJiraCredentials } from '../services/credentialProvider.js';
+import { isDoneCategory } from '../services/jiraService.js';
 
 const router = express.Router();
 // Auth: enforced by the default-closed /api gate in server.js.
+// Jira credentials are per-org (Phase 2): every handler resolves the caller's
+// org client via jiraClientFor(req.orgId). Orgs without a connected Jira get
+// 412 JIRA_NOT_CONNECTED (mapped in utils/httpError.js).
 
 router.get('/jira/test', async (req, res) => {
   try {
-    const user = await testConnection();
+    const jira = await jiraClientFor(req.orgId);
+    const user = await jira.testConnection();
     res.json({ ok: true, user: { name: user.displayName, email: user.emailAddress } });
   } catch (err) {
     sendUpstreamError(res, err, { extra: { ok: false } });
@@ -32,11 +22,18 @@ router.get('/jira/test', async (req, res) => {
 });
 
 router.get('/jira/health', async (req, res) => {
-  const health = { jira: false, domain: process.env.JIRA_DOMAIN || null, flask: false };
+  const health = { jira: false, domain: null, flask: false };
   try {
-    const user = await testConnection();
-    health.jira = true;
-    health.user = user.displayName;
+    const creds = await getJiraCredentials(req.orgId);
+    if (creds) {
+      health.domain = creds.domain;
+      const jira = await jiraClientFor(req.orgId);
+      const user = await jira.testConnection();
+      health.jira = true;
+      health.user = user.displayName;
+    } else {
+      health.jiraError = 'JIRA_NOT_CONNECTED';
+    }
   } catch (err) {
     health.jiraError = err.message;
   }
@@ -49,7 +46,8 @@ router.get('/jira/health', async (req, res) => {
 
 router.get('/jira/boards', async (req, res) => {
   try {
-    const boards = await getBoards();
+    const jira = await jiraClientFor(req.orgId);
+    const boards = await jira.getBoards();
     res.json(boards);
   } catch (err) {
     sendUpstreamError(res, err);
@@ -58,8 +56,14 @@ router.get('/jira/boards', async (req, res) => {
 
 router.get('/jira/sprints', async (req, res) => {
   try {
-    const boardId = req.query.boardId || process.env.JIRA_BOARD_ID;
-    const sprints = await getSprints(boardId);
+    // No global JIRA_BOARD_ID fallback anymore (per-org world) — the board id
+    // comes from the query (frontend stores each project's jira_board_id).
+    const boardId = req.query.boardId;
+    if (!boardId) {
+      return res.status(400).json({ error: 'boardId query parameter is required' });
+    }
+    const jira = await jiraClientFor(req.orgId);
+    const sprints = await jira.getSprints(boardId);
     res.json(sprints);
   } catch (err) {
     sendUpstreamError(res, err);
@@ -68,7 +72,8 @@ router.get('/jira/sprints', async (req, res) => {
 
 router.get('/jira/sprint/:sprintId', async (req, res) => {
   try {
-    const sprint = await getSprintDetails(req.params.sprintId);
+    const jira = await jiraClientFor(req.orgId);
+    const sprint = await jira.getSprintDetails(req.params.sprintId);
     res.json(sprint);
   } catch (err) {
     sendUpstreamError(res, err);
@@ -77,7 +82,8 @@ router.get('/jira/sprint/:sprintId', async (req, res) => {
 
 router.get('/jira/sprint/:sprintId/issues', async (req, res) => {
   try {
-    const issues = await getSprintIssues(req.params.sprintId);
+    const jira = await jiraClientFor(req.orgId);
+    const issues = await jira.getSprintIssues(req.params.sprintId);
     res.json(issues);
   } catch (err) {
     sendUpstreamError(res, err);
@@ -86,10 +92,11 @@ router.get('/jira/sprint/:sprintId/issues', async (req, res) => {
 
 router.get('/jira/sprint/:sprintId/burndown', async (req, res) => {
   try {
-    const data = await getBurndownData(req.params.sprintId);
+    const jira = await jiraClientFor(req.orgId);
+    const data = await jira.getBurndownData(req.params.sprintId);
     if (req.query.debug) {
-      const issues = await getSprintIssues(req.params.sprintId);
-      const sprint = await getSprintDetails(req.params.sprintId);
+      const issues = await jira.getSprintIssues(req.params.sprintId);
+      const sprint = await jira.getSprintDetails(req.params.sprintId);
       res.json({
         burndown: data,
         debug: {
@@ -119,7 +126,8 @@ router.get('/jira/sprint/:sprintId/burndown', async (req, res) => {
 
 router.get('/jira/project/:projectKey/issues', async (req, res) => {
   try {
-    const issues = await getProjectIssues(req.params.projectKey);
+    const jira = await jiraClientFor(req.orgId);
+    const issues = await jira.getProjectIssues(req.params.projectKey);
     res.json(issues);
   } catch (err) {
     sendUpstreamError(res, err);
@@ -128,7 +136,8 @@ router.get('/jira/project/:projectKey/issues', async (req, res) => {
 
 router.get('/jira/issue/:issueKey', async (req, res) => {
   try {
-    const transitions = await getIssueTransitions(req.params.issueKey);
+    const jira = await jiraClientFor(req.orgId);
+    const transitions = await jira.getIssueTransitions(req.params.issueKey);
     res.json({ transitions });
   } catch (err) {
     sendUpstreamError(res, err);
@@ -139,7 +148,8 @@ router.put('/jira/issue/:issueKey', async (req, res) => {
   try {
     const { transitionId } = req.body;
     if (!transitionId) return res.status(400).json({ error: 'transitionId required' });
-    await transitionIssue(req.params.issueKey, transitionId);
+    const jira = await jiraClientFor(req.orgId);
+    await jira.transitionIssue(req.params.issueKey, transitionId);
     // Broadcast to all clients watching this project so their kanban refreshes instantly
     const projectKey = req.params.issueKey.split('-')[0];
     emitToProject(projectKey, 'issue:changed', { key: req.params.issueKey });
@@ -156,12 +166,13 @@ router.put('/jira/issue/:issueKey/assign', async (req, res) => {
     const { jiraQuery } = req.body;
     if (!jiraQuery) return res.status(400).json({ error: 'jiraQuery (email or username) is required' });
 
-    const users = await searchUser(jiraQuery);
+    const jira = await jiraClientFor(req.orgId);
+    const users = await jira.searchUser(jiraQuery);
     if (users.length === 0) {
       return res.status(404).json({ error: `No Jira user found for "${jiraQuery}"` });
     }
 
-    await assignIssue(req.params.issueKey, users[0].accountId);
+    await jira.assignIssue(req.params.issueKey, users[0].accountId);
     const projectKey = req.params.issueKey.split('-')[0];
     emitToProject(projectKey, 'issue:changed', { key: req.params.issueKey });
     res.json({ ok: true, assignee: { name: users[0].displayName, accountId: users[0].accountId } });
@@ -174,7 +185,8 @@ router.put('/jira/issue/:issueKey/assign', async (req, res) => {
 
 router.get('/jira/board/:boardId/sprints', async (req, res) => {
   try {
-    const sprints = await getSprints(req.params.boardId);
+    const jira = await jiraClientFor(req.orgId);
+    const sprints = await jira.getSprints(req.params.boardId);
     res.json(sprints);
   } catch (err) {
     sendUpstreamError(res, err);
@@ -187,10 +199,12 @@ router.post('/jira/sprint/:sprintId/complete', async (req, res) => {
     const sprintId = req.params.sprintId;
     if (!boardId) return res.status(400).json({ error: 'boardId required' });
 
+    const jira = await jiraClientFor(req.orgId);
+
     // 1. Get current sprint details + issues
     const [sprint, issues] = await Promise.all([
-      getSprintDetails(sprintId),
-      getSprintIssues(sprintId),
+      jira.getSprintDetails(sprintId),
+      jira.getSprintIssues(sprintId),
     ]);
 
     // 2. Partition issues into done vs incomplete
@@ -205,7 +219,7 @@ router.post('/jira/sprint/:sprintId/complete', async (req, res) => {
     }
 
     // 3. Find next future sprint
-    const allSprints = await getSprints(boardId);
+    const allSprints = await jira.getSprints(boardId);
     const futureSprints = allSprints
       .filter(s => s.state === 'future')
       .sort((a, b) => new Date(a.startDate || 0) - new Date(b.startDate || 0));
@@ -216,7 +230,7 @@ router.post('/jira/sprint/:sprintId/complete', async (req, res) => {
     if (incompleteIssues.length > 0 && nextSprint) {
       const keys = incompleteIssues.map(i => i.key);
       try {
-        await moveIssueToSprint(nextSprint.id, keys);
+        await jira.moveIssueToSprint(nextSprint.id, keys);
         movedKeys.push(...keys);
         console.log(`[Complete] Moved ${keys.length} incomplete issues to ${nextSprint.name}`);
       } catch (err) {
@@ -225,7 +239,7 @@ router.post('/jira/sprint/:sprintId/complete', async (req, res) => {
     }
 
     // 5. Close current sprint
-    await closeSprint(sprintId);
+    await jira.closeSprint(sprintId);
     console.log(`[Complete] Closed sprint: ${sprint.name}`);
 
     // 6. Start next sprint if exists
@@ -234,7 +248,7 @@ router.post('/jira/sprint/:sprintId/complete', async (req, res) => {
       try {
         const sprintStartDate = nextSprint.startDate || new Date().toISOString();
         const sprintEndDate = nextSprint.endDate || new Date(new Date(sprintStartDate).getTime() + 14 * 86400000).toISOString();
-        await startSprint(nextSprint.id, sprintStartDate, sprintEndDate, boardId);
+        await jira.startSprint(nextSprint.id, sprintStartDate, sprintEndDate, boardId);
         nextSprintStarted = { id: nextSprint.id, name: nextSprint.name, state: 'active' };
         console.log(`[Complete] Started next sprint: ${nextSprint.name}`);
       } catch (err) {

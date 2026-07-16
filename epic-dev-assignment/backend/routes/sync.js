@@ -1,14 +1,13 @@
 import express from 'express';
 import { sendUpstreamError } from '../utils/httpError.js';
-import {
-  createEpic, createStory, createSprint, startSprint, moveIssueToSprint,
-  assignIssue, updateStoryPoints, searchUser, searchAssignableUser,
-  generateProjectKey, getMyself, createProject, getProjectBoards, updateProjectLead, updateProjectSettings,
-  getProjectRoles, addUserToProjectRole, inviteUsersToJira,
-} from '../services/jiraService.js';
+import { jiraClientFor } from '../services/jiraClientFor.js';
+import { generateProjectKey } from '../services/jiraService.js';
 
 const router = express.Router();
 // Auth: enforced by the default-closed /api gate in server.js.
+// Jira credentials are per-org (Phase 2): the handler resolves the caller's
+// org client via jiraClientFor(req.orgId); orgs without a connected Jira get
+// 412 JIRA_NOT_CONNECTED (mapped in utils/httpError.js).
 
 /**
  * Distribute stories across sprints respecting dependencies and epic cohesion.
@@ -135,11 +134,13 @@ router.post('/ai/sync-jira', async (req, res) => {
   const warnings = [];
 
   try {
+    const jira = await jiraClientFor(req.orgId);
+
     // Step 0: Auto-create Jira project and discover its board
     let projectKey;
-    let jiraBoardId = process.env.JIRA_BOARD_ID || null;
+    let jiraBoardId = null; // discovered from the auto-created project below
 
-    const myself = await getMyself();
+    const myself = await jira.getMyself();
     const leadAccountId = myself.accountId;
     console.log(`[Sync] Authenticated as: ${myself.displayName}`);
 
@@ -148,7 +149,7 @@ router.post('/ai/sync-jira', async (req, res) => {
     for (let attempt = 0; attempt < 5; attempt++) {
       const candidateKey = attempt === 0 ? baseKey : `${baseKey}${attempt + 1}`;
       try {
-        const proj = await createProject(cleanProjectName, candidateKey, leadAccountId);
+        const proj = await jira.createProject(cleanProjectName, candidateKey, leadAccountId);
         projectKey = proj.key || candidateKey;
         console.log(`[Sync] Created Jira project: ${projectKey}`);
         created = true;
@@ -167,7 +168,7 @@ router.post('/ai/sync-jira', async (req, res) => {
 
     // Set assigneeType to UNASSIGNED so new issues aren't auto-assigned to the project lead
     try {
-      await updateProjectSettings(projectKey, { assigneeType: 'UNASSIGNED' });
+      await jira.updateProjectSettings(projectKey, { assigneeType: 'UNASSIGNED' });
       console.log(`[Sync] Set project ${projectKey} default assignee to UNASSIGNED`);
     } catch (err) {
       console.warn(`[Sync] Could not change assignee type: ${err.message}`);
@@ -178,7 +179,7 @@ router.post('/ai/sync-jira', async (req, res) => {
       const delays = [2000, 4000, 8000];
       for (let attempt = 0; attempt < delays.length; attempt++) {
         await new Promise((r) => setTimeout(r, delays[attempt]));
-        const boards = await getProjectBoards(projectKey);
+        const boards = await jira.getProjectBoards(projectKey);
         const scrumBoard = boards.find(b => b.type === 'scrum');
         const selectedBoard = scrumBoard || boards[0];
         if (selectedBoard) {
@@ -235,7 +236,7 @@ router.post('/ai/sync-jira', async (req, res) => {
           const sprintName = numSprints > 1
             ? `${cleanProjectName} - Sprint ${i + 1}`
             : `${cleanProjectName} - Sprint`;
-          const sprint = await createSprint(jiraBoardId, sprintName, sStart.toISOString(), sEnd.toISOString());
+          const sprint = await jira.createSprint(jiraBoardId, sprintName, sStart.toISOString(), sEnd.toISOString());
           sprints.push(sprint);
           console.log(`[Sync] Created sprint: ${sprint.name} (ID: ${sprint.id})`);
         } catch (err) {
@@ -274,11 +275,11 @@ router.post('/ai/sync-jira', async (req, res) => {
         // Try the explicit Jira email/username first, then fall back to GitHub username
         let users = [];
         if (hasExplicitMapping) {
-          users = await searchUser(jiraQuery);
+          users = await jira.searchUser(jiraQuery);
         }
         if (users.length === 0) {
           // Fall back to GitHub username search
-          users = await searchUser(username);
+          users = await jira.searchUser(username);
           if (users.length > 0 && !hasExplicitMapping) {
             fuzzyMatches.push(`${username} → ${users[0].displayName} (matched by name, not email)`);
           }
@@ -305,7 +306,7 @@ router.post('/ai/sync-jira', async (req, res) => {
 
       if (emailsToInvite.length > 0) {
         try {
-          const inviteResults = await inviteUsersToJira(emailsToInvite);
+          const inviteResults = await jira.inviteUsersToJira(emailsToInvite);
           for (const result of inviteResults) {
             const username = Object.entries(developerJiraMap).find(([, email]) => email === result.email)?.[0];
             if (!username) {
@@ -321,7 +322,7 @@ router.post('/ai/sync-jira', async (req, res) => {
               console.log(`[Sync] Invited ${result.email} to Jira → ${result.displayName}`);
             } else if (result.status === 'already_exists') {
               // User exists but wasn't found by search — retry search after invite
-              const retryUsers = await searchUser(result.email);
+              const retryUsers = await jira.searchUser(result.email);
               if (retryUsers.length > 0 && username) {
                 accountIdCache[username] = retryUsers[0].accountId;
                 const idx = unresolvedUsers.indexOf(username);
@@ -353,7 +354,7 @@ router.post('/ai/sync-jira', async (req, res) => {
     const resolvedAccountIds = Object.values(accountIdCache).filter(Boolean);
     if (resolvedAccountIds.length > 0) {
       try {
-        const roles = await getProjectRoles(projectKey);
+        const roles = await jira.getProjectRoles(projectKey);
         console.log(`[Sync] Available project roles: ${JSON.stringify(roles)}`);
 
         // Get ALL role IDs (including addons role) — try every role
@@ -365,7 +366,7 @@ router.post('/ai/sync-jira', async (req, res) => {
           // Try adding to every available role
           for (const roleId of allRoleIds) {
             try {
-              await addUserToProjectRole(projectKey, roleId, accountId);
+              await jira.addUserToProjectRole(projectKey, roleId, accountId);
               addedToAny = true;
               console.log(`[Sync] Added user ${accountId} to role ${roleId}`);
             } catch (err) {
@@ -375,7 +376,7 @@ router.post('/ai/sync-jira', async (req, res) => {
 
           // Also try to set the user as a project lead (grants all permissions)
           try {
-            await updateProjectLead(projectKey, accountId);
+            await jira.updateProjectLead(projectKey, accountId);
             console.log(`[Sync] Set user ${accountId} as project lead (temporary)`);
           } catch (err) {
             // Non-fatal — just trying to grant permissions
@@ -386,7 +387,7 @@ router.post('/ai/sync-jira', async (req, res) => {
 
         // Restore the original project lead (the API user)
         try {
-          await updateProjectLead(projectKey, leadAccountId);
+          await jira.updateProjectLead(projectKey, leadAccountId);
         } catch (_) {}
 
         console.log(`[Sync] Added ${addedCount}/${resolvedAccountIds.length} developers to project`);
@@ -408,14 +409,14 @@ router.post('/ai/sync-jira', async (req, res) => {
       try {
         // Use the Jira email/username provided by the user, fall back to accountId search
         const jiraQuery = developerJiraMap[username] || accountId;
-        const assignable = await searchAssignableUser(jiraQuery, projectKey);
+        const assignable = await jira.searchAssignableUser(jiraQuery, projectKey);
         const match = assignable.find(u => u.accountId === accountId);
         if (match) {
           assignableCache[username] = accountId;
           console.log(`[Sync] Verified ${username} is assignable in project ${projectKey}`);
         } else {
           // Try searching by account ID directly
-          const byId = await searchAssignableUser(accountId, projectKey);
+          const byId = await jira.searchAssignableUser(accountId, projectKey);
           if (byId.length > 0) {
             assignableCache[username] = accountId;
             console.log(`[Sync] Verified ${username} is assignable (by accountId)`);
@@ -443,14 +444,14 @@ router.post('/ai/sync-jira', async (req, res) => {
 
     for (let eIdx = 0; eIdx < approvedEpics.length; eIdx++) {
       const epic = approvedEpics[eIdx];
-      const createdEpic = await createEpic(projectKey, epic.title, epic.description || '');
+      const createdEpic = await jira.createEpic(projectKey, epic.title, epic.description || '');
       const epicKey = createdEpic.key;
       console.log(`[Sync] Created epic: ${epicKey} - ${epic.title}`);
 
       // Assign developer to epic
       const epicDevUsername = epicAssignmentMap[epic.id];
       if (epicDevUsername && assignableCache[epicDevUsername]) {
-        try { await assignIssue(epicKey, assignableCache[epicDevUsername]); } catch (err) {
+        try { await jira.assignIssue(epicKey, assignableCache[epicDevUsername]); } catch (err) {
           assignmentFailures++;
           console.warn(`[Sync] Could not assign ${epicKey} to ${epicDevUsername}: ${err.message}`);
         }
@@ -460,7 +461,7 @@ router.post('/ai/sync-jira', async (req, res) => {
       const approvedStories = (epic.stories || []).filter((s) => s.status === 'approved');
 
       for (const story of approvedStories) {
-        const createdStory = await createStory(
+        const createdStory = await jira.createStory(
           projectKey, story.title,
           story.description || '', story.acceptanceCriteria || '',
           epicKey, story.testCases || []
@@ -470,7 +471,7 @@ router.post('/ai/sync-jira', async (req, res) => {
         // Set story points
         const sp = parseInt(story.storyPoints || 5);
         if (sp) {
-          try { await updateStoryPoints(createdStory.key, sp); } catch (err) {
+          try { await jira.updateStoryPoints(createdStory.key, sp); } catch (err) {
             pointsFailures++;
             console.warn(`[Sync] Could not set story points on ${createdStory.key}: ${err.message}`);
           }
@@ -479,7 +480,7 @@ router.post('/ai/sync-jira', async (req, res) => {
         // Assign developer — story-level first, fall back to epic-level
         const storyDevUsername = storyAssignmentMap[story.id] || epicDevUsername;
         if (storyDevUsername && assignableCache[storyDevUsername]) {
-          try { await assignIssue(createdStory.key, assignableCache[storyDevUsername]); } catch (err) {
+          try { await jira.assignIssue(createdStory.key, assignableCache[storyDevUsername]); } catch (err) {
             assignmentFailures++;
             console.warn(`[Sync] Could not assign ${createdStory.key} to ${storyDevUsername}: ${err.message}`);
           }
@@ -506,7 +507,7 @@ router.post('/ai/sync-jira', async (req, res) => {
         // Single sprint: move all stories (not epics — epics don't belong in sprints)
         const storyKeys = allCreatedStories.map(s => s.key);
         try {
-          await moveIssueToSprint(sprints[0].id, storyKeys);
+          await jira.moveIssueToSprint(sprints[0].id, storyKeys);
           console.log(`[Sync] Moved ${storyKeys.length} stories to sprint ${sprints[0].id}`);
         } catch (err) {
           moveFailures += storyKeys.length;
@@ -521,7 +522,7 @@ router.post('/ai/sync-jira', async (req, res) => {
           const storyKeys = storyBins[i]?.map(s => s.key) || [];
           if (storyKeys.length === 0) continue;
           try {
-            await moveIssueToSprint(sprints[i].id, storyKeys);
+            await jira.moveIssueToSprint(sprints[i].id, storyKeys);
             console.log(`[Sync] Moved ${storyKeys.length} stories to sprint ${i + 1} (ID: ${sprints[i].id})`);
           } catch (err) {
             moveFailures += storyKeys.length;
@@ -544,7 +545,7 @@ router.post('/ai/sync-jira', async (req, res) => {
       let sprintStarted = false;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          await startSprint(sprints[0].id, s1Start.toISOString(), s1End.toISOString(), jiraBoardId, sprints[0].name);
+          await jira.startSprint(sprints[0].id, s1Start.toISOString(), s1End.toISOString(), jiraBoardId, sprints[0].name);
           console.log(`[Sync] Started sprint: ${sprints[0].name} (ID: ${sprints[0].id}) on attempt ${attempt + 1}`);
           sprintStarted = true;
           break;
