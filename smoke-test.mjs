@@ -142,6 +142,11 @@ async function authzChecks() {
     ['POST /api/db/standups (no key, no session)', 'POST', `${API}/api/db/standups`, {}],
     ['GET  /api/jira/sprints', 'GET', `${API}/api/jira/sprints`, undefined],
     ['GET  /api/standup/history', 'GET', `${API}/api/standup/history`, undefined],
+    ['GET  /api/integrations', 'GET', `${API}/api/integrations`, undefined],
+    ['PUT  /api/integrations/jira', 'PUT', `${API}/api/integrations/jira`, {}],
+    ['PUT  /api/integrations/github', 'PUT', `${API}/api/integrations/github`, {}],
+    ['DELETE /api/integrations/jira', 'DELETE', `${API}/api/integrations/jira`, undefined],
+    ['POST /api/integrations/jira/test', 'POST', `${API}/api/integrations/jira/test`, {}],
   ];
   for (const [name, method, url, body] of cases) {
     await check('authz', `${name} unauthenticated → 401`, async () => {
@@ -266,14 +271,23 @@ async function flaskChecks() {
     record('flask', 'remaining Flask checks', 'SKIP', 'flask not reachable');
     return;
   }
-  await check('flask', 'POST /api/generate short → 400 (validation, no Gemini)', async () => {
-    const r = await http('POST', `${FLASK}/api/generate`, { description: 'x' }, 15000, { auth: false });
-    expect(r.status === 400, `expected 400, got ${r.status}`);
-  });
-  await check('flask', 'POST /api/classify {} → 400', async () => {
-    const r = await http('POST', `${FLASK}/api/classify`, {}, 15000, { auth: false });
-    expect(r.status === 400, `expected 400, got ${r.status}`);
-  });
+  // Flask gates /api/* behind X-Internal-Key when INTERNAL_API_KEY is set (Step 0.3).
+  // Send the shared key (via SMOKE_INTERNAL_KEY) so validation paths are reachable;
+  // if the gate is active and no key was provided, skip rather than false-fail.
+  const flaskHeaders = INTERNAL_KEY ? { 'X-Internal-Key': INTERNAL_KEY } : {};
+  const validationCases = [
+    ['POST /api/generate short → 400 (validation, no Gemini)', `${FLASK}/api/generate`, { description: 'x' }],
+    ['POST /api/classify {} → 400', `${FLASK}/api/classify`, {}],
+  ];
+  for (const [name, url, body] of validationCases) {
+    const r = await http('POST', url, body, 15000, { auth: false, headers: flaskHeaders });
+    if (r.status === 401 && !INTERNAL_KEY) {
+      record('flask', name, 'SKIP', 'Flask internal-key gate active — set SMOKE_INTERNAL_KEY');
+    } else {
+      record('flask', name, r.status === 400 ? 'PASS' : 'FAIL',
+        r.status === 400 ? '' : `expected 400, got ${r.status}`);
+    }
+  }
 }
 
 // ── Standup bot (optional service → soft) ────────────────────────────────────

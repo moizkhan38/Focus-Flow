@@ -17,6 +17,15 @@ export function requireOrg(req, res, next) {
   return next();
 }
 
+// Admin-only gate for org-management actions (e.g. connecting integrations).
+// Runs AFTER requireOrg (the /api gate), so req.orgRole is already populated.
+export function requireOrgAdmin(req, res, next) {
+  if (req.orgRole !== 'org:admin') {
+    return res.status(403).json({ success: false, error: 'ORG_ADMIN_REQUIRED' });
+  }
+  return next();
+}
+
 // ─── Internal service lane (standup bot → Express) ──────────────────────────
 // The bot is a trusted server-side caller with no Clerk session. It authenticates
 // with the shared INTERNAL_API_KEY and declares which org it writes into via

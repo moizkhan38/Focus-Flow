@@ -16,8 +16,10 @@ import jiraRouter from './routes/jira.js';
 import syncRouter from './routes/sync.js';
 import standupRouter from './routes/standup.js';
 import dbRouter from './routes/db.js';
+import integrationsRouter from './routes/integrations.js';
 import { ping as pingDb, pool, query } from './db.js';
 import { setIo } from './io.js';
+import { assertMasterKey } from './services/cryptoService.js';
 
 const app = express();
 const PORT = process.env.PORT || 3003;
@@ -30,6 +32,11 @@ if (!process.env.CLERK_SECRET_KEY) {
   );
   process.exit(1);
 }
+
+// The integrations API stores per-org Jira/GitHub credentials encrypted with the
+// master key. Fail fast at boot if it's missing/malformed rather than at the
+// first credential save.
+assertMasterKey();
 
 // Behind a reverse proxy/load balancer, set TRUST_PROXY=1 so rate limiting and
 // client IPs are correct. 0 (trust nothing) is the safe default for direct exposure.
@@ -97,6 +104,7 @@ app.use('/api', jiraRouter);
 app.use('/api', syncRouter);
 app.use('/api', standupRouter);
 app.use('/api', dbRouter);
+app.use('/api', integrationsRouter);
 
 // Global error handler (last middleware). Log the real error; return a safe message.
 // Only errors explicitly marked expose:true reveal their message to the client.
