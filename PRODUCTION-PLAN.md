@@ -84,6 +84,7 @@ PostgreSQL "focusflow"             — tables: projects, developers, standups, r
 | **D4** | **Persistence = existing Postgres via `/api/db/*`**, org-scoped. localStorage remains only for: theme, in-progress wizard drafts, templates. | User-selected. |
 | **D5** | **Gemini key stays platform-owned** (one key, our cost) — AI generation is the product. Per-org quotas = Phase 4 (billing). | |
 | **D6** | **Standup bot stays single-workspace per deployment in v1** (its own env: Slack token + one org binding). Multi-workspace Slack OAuth = Phase 4. | Making the bot multi-tenant requires Slack app distribution + per-workspace token storage — separate project. |
+| **D7** | **When Slack goes multi-workspace: one Slack workspace ↔ exactly ONE organization (strict 1:1).** `slack_workspaces(team_id PK, org_id NOT NULL UNIQUE, ciphertext, key_version, installed_by, …)` — both constraints required. Install is a plain **INSERT that is allowed to fail**, never an upsert: conflict on `team_id` → 409 "already connected to another organization" (**never name the other org** — leaks tenant existence); conflict on `org_id` → 409 "disconnect your current workspace first". Re-binding requires an admin of the *owning* org to disconnect first. | **User's decision (2026-07-16).** The PK is a tenant boundary, not bookkeeping: an upsert would let org B's install silently re-bind org A's workspace, redirecting A's standups + reminders into B — same class as the cross-org project-id theft blocked in 1.6, same 409 answer. `org_id UNIQUE` keeps the reminder scheduler unambiguous. **Revisit when:** an agency needs one workspace across several orgs (→ per-channel binding), or a customer is on Slack Enterprise Grid (`enterprise_id` + many `team_id`s). Neither is a v1 problem; 1:1 is the default that cannot leak. |
 
 ## Target Architecture (end of Phase 2)
 
@@ -546,11 +547,56 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 | Item | Trigger |
 |---|---|
 | **Atlassian OAuth 3LO + GitHub App** (spike first: can 3LO scopes create projects? If not, keep token path for the create-project feature and OAuth for the rest) | First security-conscious customer / marketplace listing |
-| Slack multi-workspace OAuth for standup bot (per-org Slack) | Second customer wants standups |
+| **Slack multi-workspace OAuth for standup bot (per-org Slack)** — design settled, see D7. See "Phase 4 detail: Slack multi-workspace" below. | Second customer wants standups |
 | Billing (Stripe) + per-org Gemini quotas/limits | Monetization |
 | Master key → KMS (swap `wrapDek/unwrapDek` only) | Funding/compliance |
 | Sentry (frontend+backend), E2E tests (Playwright), unit tests for scoring/sync | Post-launch stability |
 | Per-page React error boundaries; self-host fonts; audit log; data export/GDPR delete | As needed |
+
+## Phase 4 detail: Slack multi-workspace (design settled 2026-07-16 — build only when D6's trigger fires)
+
+**Why it can't wait for "just add a token field":** unlike Jira/GitHub, a client cannot paste a Slack
+bot token — their workspace must *install* the app via OAuth, and the install must prove which org it
+belongs to. Audited state of `standup-bot/app.py` (2026-07-16): **`team_id` appears nowhere**, there is
+ONE module-level `slack_client = WebClient(token=os.environ["SLACK_BOT_TOKEN"])` (app.py:66), and 3
+scheduler jobs assume "the" workspace. It doesn't degrade with a 2nd workspace — it structurally
+cannot serve one.
+
+**Install flow** (the whole feature):
+1. Org admin clicks Connect Slack in Integrations → `/slack/install`.
+2. Redirect to Slack OAuth with a **signed, nonce'd, short-TTL `state` carrying the orgId**.
+3. Callback `/slack/oauth/callback?code&state` → verify the state signature → trust orgId; exchange
+   `code` → `team_id` + workspace bot token.
+4. `INSERT INTO slack_workspaces …` per **D7** (fail-on-conflict, never upsert).
+   ⚠️ **The `state` signature is the security-critical piece** — unsigned state lets an attacker bind
+   THEIR workspace to YOUR org, flowing their standups into your data. Highest-review-effort item.
+
+**Bot refactor** — the same per-tenant client-factory pattern as 2.5/2.6, applied a third time:
+- Read `team_id` off every inbound payload → resolve org + token → **per-request `WebClient`**
+  (kills the module-level global). Cache the lookup: slash commands have a **3-second deadline**.
+- Standups already write with `X-Org-Id` (1.4) — that part is done.
+- Jira transitions resolve **that org's** stored creds → **this is what finally removes the bot's
+  plaintext `JIRA_URL/JIRA_EMAIL/JIRA_API_TOKEN/JIRA_PROJECT_KEY`** (post-Phase-2, the bot is the last
+  holder of global Jira credentials on disk — D6's intentional exception).
+- The 3 scheduler jobs loop workspaces instead of assuming one.
+
+**Storage is already built:** Slack tokens reuse `cryptoService`'s envelope + the `credentialProvider`
+shape unchanged — the D1 abstraction paying off. No new crypto.
+
+**Slack-specific gotchas:**
+- **Slack app review is NOT required.** Review gates App Directory *listing* only; **unlisted
+  distribution** (send customers an install link) is enough for B2B and skips it entirely. Do not
+  budget weeks for review.
+- Signing secret is **per-app, not per-workspace** → stays a single env var.
+- Handle `app_uninstalled` → delete the row, else you retain a dead token and keep hammering it.
+- Slack now supports token rotation/refresh tokens — optional, better.
+
+**Prerequisite worth doing early (independently useful):** point the bot at the org's stored Jira
+credentials instead of its own env. Removes the last plaintext token from disk AND is required by the
+refactor above — the one piece that isn't wasted if a 2nd customer never appears. Open question to
+settle first: the bot is Python and `credentialProvider` is Node, so Express would need an
+internal-key-gated endpoint handing decrypted creds over localhost — trading credential-at-rest for
+credential-over-the-wire. Decide deliberately; don't bolt it on.
 
 ---
 
