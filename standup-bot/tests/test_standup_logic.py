@@ -165,14 +165,28 @@ class ProcessStandupLogicTests(unittest.TestCase):
 class HttpEndpointTests(unittest.TestCase):
     def setUp(self):
         self.client = app.app.test_client()
+        # /api/standup* is gated by X-Internal-Key whenever INTERNAL_API_KEY is
+        # set in the environment — which it is on any machine with a real .env.
+        # This test targets field validation, not the gate, so present the key
+        # when it's configured; otherwise it 401s instead of 400 and the suite's
+        # result depends on the developer's .env rather than the code.
+        self.headers = (
+            {"X-Internal-Key": app.INTERNAL_API_KEY} if app.INTERNAL_API_KEY else {}
+        )
 
     def test_health_endpoint(self):
         resp = self.client.get("/api/health")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["status"], "running")
 
-    def test_api_standup_requires_fields(self):
+    def test_api_standup_gated_when_key_configured(self):
+        if not app.INTERNAL_API_KEY:
+            self.skipTest("INTERNAL_API_KEY unset — gate inactive in this environment")
         resp = self.client.post("/api/standup", json={"user_id": "U1"})
+        self.assertEqual(resp.status_code, 401)
+
+    def test_api_standup_requires_fields(self):
+        resp = self.client.post("/api/standup", json={"user_id": "U1"}, headers=self.headers)
         self.assertEqual(resp.status_code, 400)
 
 

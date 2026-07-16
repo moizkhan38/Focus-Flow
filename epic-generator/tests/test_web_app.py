@@ -144,18 +144,35 @@ class HttpValidationTests(unittest.TestCase):
 
     def setUp(self):
         self.client = web_app.app.test_client()
+        # The internal-key gate (step 0.3) turns on whenever INTERNAL_API_KEY is
+        # set in the environment — which it is on any machine with a real .env.
+        # These tests target validation, not the gate, so present the key when
+        # it's configured. Without this they 401 instead of 400, and whether the
+        # suite passes depends on the developer's .env rather than the code.
+        self.headers = (
+            {"X-Internal-Key": web_app.INTERNAL_API_KEY} if web_app.INTERNAL_API_KEY else {}
+        )
 
     def test_health_returns_200(self):
+        # Health is exempt from the gate — assert that by sending no key.
         resp = self.client.get("/api/health")
         self.assertEqual(resp.status_code, 200)
 
-    def test_generate_empty_description_400(self):
+    def test_gated_when_key_configured(self):
+        if not web_app.INTERNAL_API_KEY:
+            self.skipTest("INTERNAL_API_KEY unset — gate inactive in this environment")
         resp = self.client.post("/api/generate", json={})
+        self.assertEqual(resp.status_code, 401)
+
+    def test_generate_empty_description_400(self):
+        resp = self.client.post("/api/generate", json={}, headers=self.headers)
         self.assertEqual(resp.status_code, 400)
         self.assertFalse(resp.get_json()["success"])
 
     def test_generate_short_description_400(self):
-        resp = self.client.post("/api/generate", json={"description": "Build an app"})
+        resp = self.client.post(
+            "/api/generate", json={"description": "Build an app"}, headers=self.headers
+        )
         self.assertEqual(resp.status_code, 400)
         self.assertIn("too short", resp.get_json()["error"])
 
@@ -163,15 +180,16 @@ class HttpValidationTests(unittest.TestCase):
         resp = self.client.post(
             "/api/generate",
             json={"description": "this is a placeholder description for the project"},
+            headers=self.headers,
         )
         self.assertEqual(resp.status_code, 400)
 
     def test_regenerate_missing_fields_400(self):
-        resp = self.client.post("/api/regenerate", json={})
+        resp = self.client.post("/api/regenerate", json={}, headers=self.headers)
         self.assertEqual(resp.status_code, 400)
 
     def test_classify_missing_fields_400(self):
-        resp = self.client.post("/api/classify", json={})
+        resp = self.client.post("/api/classify", json={}, headers=self.headers)
         self.assertEqual(resp.status_code, 400)
 
 
