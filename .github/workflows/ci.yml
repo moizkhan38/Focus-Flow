@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: epic-dev-assignment/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: epic-dev-assignment/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  backend:
+    name: Backend check + tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: epic-dev-assignment/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: epic-dev-assignment/backend/package-lock.json
+      - run: npm ci
+      - name: Syntax check entrypoint
+        run: node --check server.js
+      # Unit suites are dependency-free (pure services + crypto with an ephemeral
+      # key); no Postgres needed. A stray import of db.js would fail-fast, which
+      # is itself a useful signal.
+      - name: Unit tests
+        run: npm test
+
+  python:
+    name: Python compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # py_compile checks syntax without importing, so no dependencies needed.
+      - name: Compile Flask + bot
+        run: python -m py_compile epic-generator/web_app.py standup-bot/app.py
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan tracked files for credential patterns
+        shell: bash
+        run: |
+          # Grep-based scan (no external action / license needed). Matches real
+          # token shapes with length quantifiers so the regexes in this workflow
+          # file don't self-match. Docs, lockfiles and this workflow are excluded.
+          # Note: pk_live/pk_test (Clerk PUBLISHABLE keys) are intentionally NOT
+          # scanned — they are public by design.
+          patterns='ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{40,}|ATATT[A-Za-z0-9_=-]{50,}|xox[baprs]-[A-Za-z0-9-]{20,}|AIza[A-Za-z0-9_-]{35}|sk_(live|test)_[A-Za-z0-9]{20,}'
+          if git grep -nIE "$patterns" -- ':!*.md' ':!*.lock' ':!package-lock.json' ':!.github/**'; then
+            echo "::error::Potential secret found in tracked files (see matches above)."
+            exit 1
+          fi
+          echo "No secret patterns found in tracked files."
