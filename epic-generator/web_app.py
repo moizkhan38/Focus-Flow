@@ -10,8 +10,17 @@ from dotenv import load_dotenv
 import os
 import re
 import sys
+import logging
 
 load_dotenv(override=True)
+
+# Structured, level-controlled logging (Phase 3, step 3.2). LOG_LEVEL env
+# (default INFO) also governs Flask/Werkzeug request logs. Timestamps included.
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+log = logging.getLogger("epic-generator")
 
 app = Flask(__name__)
 
@@ -110,10 +119,10 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # Confirm the key is present without ever logging any part of its value.
 if GEMINI_API_KEY:
-    print("[INFO] GEMINI_API_KEY loaded")
+    log.info(f"GEMINI_API_KEY loaded")
     sys.stdout.flush()
 else:
-    print("[WARNING] No GEMINI_API_KEY found in environment!")
+    log.warning(f"No GEMINI_API_KEY found in environment!")
     sys.stdout.flush()
 
 # Global model instances (load once when server starts)
@@ -125,9 +134,9 @@ print("="*80)
 print("\nInitializing Google Gemini API Generator...")
 try:
     gemini_generator = GeminiEpicGenerator(api_key=GEMINI_API_KEY)
-    print("[SUCCESS] Gemini API Generator ready!")
+    log.info(f"Gemini API Generator ready!")
 except Exception as e:
-    print(f"[ERROR] Gemini API initialization failed: {e}")
+    log.error(f"Gemini API initialization failed: {e}")
     gemini_generator = None
 
 print("\n" + "="*80)
@@ -475,7 +484,7 @@ def regenerate():
             }), 400
 
     except Exception as e:
-        print(f"[ERROR] Regeneration failed: {e}")
+        log.error(f"Regeneration failed: {e}")
         sys.stdout.flush()
         return jsonify({
             'success': False,
@@ -870,7 +879,7 @@ Return ONLY the category name, nothing else."""
             })
 
         except Exception as e:
-            print(f"[ERROR] Gemini classification failed: {e}")
+            log.error(f"Gemini classification failed: {e}")
             sys.stdout.flush()
             return jsonify({
                 'success': False,
@@ -878,7 +887,7 @@ Return ONLY the category name, nothing else."""
             }), 500
 
     except Exception as e:
-        print(f"[ERROR] Classification failed: {e}")
+        log.error(f"Classification failed: {e}")
         sys.stdout.flush()
         return jsonify({
             'success': False,

@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import logging
 from concurrent.futures import ThreadPoolExecutor
 import requests
 from datetime import datetime, date
@@ -14,6 +15,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 load_dotenv()
+
+# Structured, level-controlled logging (Phase 3, step 3.2). LOG_LEVEL env
+# (default INFO) also governs Flask/Werkzeug + APScheduler logs. Timestamps included.
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+log = logging.getLogger("standup-bot")
 
 # Resolve the data file relative to this script, not the process CWD.
 # STANDUP_DATA_FILE overrides the location so a container can point it at a
@@ -115,9 +124,9 @@ def refresh_jira_projects_cache():
         for p in projects:
             if p.get("key") and p.get("name"):
                 _jira_project_names[p["key"]] = p["name"]
-        print(f"[JIRA-CACHE] Refreshed {len(options)} project options")
+        log.info(f"[JIRA-CACHE] Refreshed {len(options)} project options")
     except Exception as e:
-        print(f"[JIRA-CACHE] Refresh failed: {e}")
+        log.info(f"[JIRA-CACHE] Refresh failed: {e}")
         if not _jira_projects_cache["options"]:
             _jira_projects_cache["options"] = _build_default_project_options()
 
@@ -281,11 +290,11 @@ def save_standup_to_json(user_id, project_key, yesterday, today, blocker, analys
     try:
         resp = requests.post(EXPRESS_DB_URL, json=new_entry, timeout=5, headers=_express_headers())
         if resp.ok:
-            print(f"[SUCCESS] Saved standup to DB for {user_id}")
+            log.info(f"Saved standup to DB for {user_id}")
             return new_entry
-        print(f"[WARN] DB save returned {resp.status_code}: {resp.text[:200]}")
+        log.warning(f"DB save returned {resp.status_code}: {resp.text[:200]}")
     except Exception as e:
-        print(f"[WARN] DB save failed, falling back to JSON: {e}")
+        log.warning(f"DB save failed, falling back to JSON: {e}")
 
     # Fallback: append to local JSON so data isn't lost if Express/DB is down
     try:
@@ -300,7 +309,7 @@ def save_standup_to_json(user_id, project_key, yesterday, today, blocker, analys
         print(f"[FALLBACK] Saved standup to JSON for {user_id}")
         return new_entry
     except Exception as e:
-        print(f"[ERROR] Failed to save standup anywhere: {e}")
+        log.error(f"Failed to save standup anywhere: {e}")
         return None
 
 
@@ -309,21 +318,21 @@ def send_to_standup_analyzer(standup_entry):
     try:
         analyzer_url = os.environ.get("STANDUP_ANALYZER_URL")
         if not analyzer_url:
-            print("[WARNING] STANDUP_ANALYZER_URL not configured")
+            log.warning(f"STANDUP_ANALYZER_URL not configured")
             return
 
         response = requests.post(
             analyzer_url, json=standup_entry, timeout=3
         )
         if response.status_code == 200:
-            print("[SUCCESS] Sent standup data to analyzer")
+            log.info(f"Sent standup data to analyzer")
         else:
             print(
                 f"[WARNING] Analyzer responded with status "
                 f"{response.status_code}"
             )
     except Exception as e:
-        print(f"[ERROR] Failed to send to analyzer: {e}")
+        log.error(f"Failed to send to analyzer: {e}")
 
 
 def process_standup_logic(user_id, project_key, yesterday, today, blocker):
@@ -489,7 +498,7 @@ def process_standup_logic(user_id, project_key, yesterday, today, blocker):
 
     except Exception as e:
         import traceback
-        print(f"[ERROR] Logic Error: {type(e).__name__}: {e}")
+        log.error(f"Logic Error: {type(e).__name__}: {e}")
         traceback.print_exc()
         slack_client.chat_postMessage(
             channel=user_id,
@@ -514,7 +523,7 @@ def analyze_standup():
             "message": "Standup data received and analyzed",
         }), 200
     except Exception as e:
-        print(f"[ERROR] Analyzer Error: {e}")
+        log.error(f"Analyzer Error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -829,7 +838,7 @@ def check_for_proactive_blockers():
                         )
 
             except Exception as e:
-                print(f"[ERROR] Scan Error for {project_key}: {e}")
+                log.error(f"Scan Error for {project_key}: {e}")
 
 
 # --- Standup Reminders ---
@@ -852,7 +861,7 @@ def get_all_slack_members():
                     "email": (member["profile"].get("email") or "").lower(),
                 })
     except Exception as e:
-        print(f"[ERROR] Failed to fetch Slack members: {e}")
+        log.error(f"Failed to fetch Slack members: {e}")
     return members
 
 
@@ -914,7 +923,7 @@ def _get_user_projects_map(members):
                     continue
                 user_projects.setdefault(uid, set()).add(key)
         except Exception as e:
-            print(f"[REMINDER] Could not fetch assignees for {key}: {e}")
+            log.info(f"[REMINDER] Could not fetch assignees for {key}: {e}")
 
     unmatched = seen_jira_emails - set(email_to_uid.keys())
     if unmatched:
@@ -955,17 +964,17 @@ def send_standup_reminder():
     First ping of the day = one digest DM listing all pending projects.
     Later pings = one DM per still-pending project so each is harder to miss.
     """
-    print("[REMINDER] Sending standup reminders...")
+    log.info(f"[REMINDER] Sending standup reminders...")
     members = get_all_slack_members()
-    print(f"[REMINDER] Found {len(members)} members: {[m['name'] for m in members]}")
+    log.info(f"[REMINDER] Found {len(members)} members: {[m['name'] for m in members]}")
 
     if not members:
-        print("[REMINDER] ERROR: No members found! Check SLACK_BOT_TOKEN and users:read scope.")
+        log.info(f"[REMINDER] ERROR: No members found! Check SLACK_BOT_TOKEN and users:read scope.")
         return
 
     user_projects = _get_user_projects_map(members)
     if not user_projects:
-        print("[REMINDER] No active Jira assignments found across projects. Nothing to remind.")
+        log.info(f"[REMINDER] No active Jira assignments found across projects. Nothing to remind.")
         return
 
     today_str = date.today().isoformat()
@@ -1014,7 +1023,7 @@ def send_standup_reminder():
                     f"{[_format_project(p) for p in sorted(pending)]}"
                 )
         except Exception as e:
-            print(f"[WARNING] Could not remind {member['name']}: {e}")
+            log.warning(f"Could not remind {member['name']}: {e}")
 
     print(
         f"[REMINDER] {digests_sent} digests, {nudges_sent} per-project follow-ups, "
@@ -1055,9 +1064,9 @@ def check_missing_standups():
                 text="Standup follow-up — please submit your standup",  # fallback
                 blocks=blocks,
             )
-            print(f"[SUCCESS] Follow-up sent to {member['name']}")
+            log.info(f"Follow-up sent to {member['name']}")
         except Exception as e:
-            print(f"[WARNING] Could not follow up {member['name']}: {e}")
+            log.warning(f"Could not follow up {member['name']}: {e}")
 
     print(
         f"[FOLLOWUP] {len(missing)}/{len(members)} members "

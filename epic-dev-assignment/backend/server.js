@@ -20,15 +20,16 @@ import integrationsRouter from './routes/integrations.js';
 import { ping as pingDb, pool, query } from './db.js';
 import { setIo } from './io.js';
 import { assertMasterKey } from './services/cryptoService.js';
+import { logger, httpLogger } from './logger.js';
 
 const app = express();
 const PORT = process.env.PORT || 3003;
 
 // Clerk is mandatory: without it the API would be open to the internet.
 if (!process.env.CLERK_SECRET_KEY) {
-  console.error(
-    '[Auth] FATAL: CLERK_SECRET_KEY is not set — refusing to start an unauthenticated API.\n' +
-    '       Add it to backend/.env (see .env.example).'
+  logger.error(
+    '[Auth] FATAL: CLERK_SECRET_KEY is not set — refusing to start an unauthenticated API. ' +
+    'Add it to backend/.env (see .env.example).'
   );
   process.exit(1);
 }
@@ -41,6 +42,10 @@ assertMasterKey();
 // Behind a reverse proxy/load balancer, set TRUST_PROXY=1 so rate limiting and
 // client IPs are correct. 0 (trust nothing) is the safe default for direct exposure.
 app.set('trust proxy', Number(process.env.TRUST_PROXY || 0));
+
+// Structured request logging first: assigns/propagates X-Request-Id and attaches
+// a per-request child logger at req.log so a request's lines all share one id.
+app.use(httpLogger);
 
 // CORS restricted to known origins (no wildcard). A disallowed browser origin gets
 // no CORS headers via cb(null, false) rather than a thrown error (which would 500).
@@ -114,7 +119,7 @@ app.use((err, req, res, _next) => {
     if (!res.headersSent) res.status(412).json({ success: false, error: err.code });
     return;
   }
-  console.error('[API] Unhandled error:', err);
+  (req.log || logger).error({ err }, 'unhandled error');
   if (res.headersSent) return;
   res.status(err.status || 500).json({
     success: false,
@@ -173,18 +178,18 @@ setIo(io);
 
 // Process-level guards so a stray rejection/exception is logged, not silent.
 process.on('unhandledRejection', (reason) => {
-  console.error('[Process] Unhandled promise rejection:', reason);
+  logger.error({ err: reason }, 'unhandled promise rejection');
 });
 process.on('uncaughtException', (err) => {
-  console.error('[Process] Uncaught exception:', err);
+  logger.error({ err }, 'uncaught exception');
   process.exit(1);
 });
 
 httpServer.listen(PORT, async () => {
-  console.log(`✅ Backend listening on port ${PORT} (all interfaces)`);
-  console.log(`📡 API at /api  ·  🔌 Socket.io on the same port`);
+  logger.info({ port: PORT }, 'backend listening (API at /api, Socket.io on same port)');
   const dbOk = await pingDb();
-  console.log(dbOk ? '🗄️  PostgreSQL: connected' : '⚠️  PostgreSQL: unreachable (set DATABASE_URL in .env)');
+  if (dbOk) logger.info('postgres connected');
+  else logger.warn('postgres unreachable (set DATABASE_URL in .env)');
 
   // Daily developer roster refresh. Guarded by a Postgres advisory lock so running
   // multiple instances doesn't fire N concurrent GitHub-hammering runs at 03:00.
@@ -196,17 +201,17 @@ httpServer.listen(PORT, async () => {
         const { rows } = await query('SELECT pg_try_advisory_lock(823471) AS ok');
         locked = rows[0]?.ok === true;
         if (!locked) {
-          console.log('[DevRefresh] another instance holds the lock — skipping this run');
+          logger.info('[DevRefresh] another instance holds the lock — skipping this run');
           return;
         }
         await refreshAllDevelopers();
       } catch (err) {
-        console.error('[DevRefresh] cron failed:', err.message);
+        logger.error({ err }, '[DevRefresh] cron failed');
       } finally {
         if (locked) await query('SELECT pg_advisory_unlock(823471)').catch(() => {});
       }
     });
-    console.log(`⏰ Developer refresh scheduled: "${schedule}"`);
+    logger.info({ schedule }, 'developer refresh scheduled');
   }
 });
 
@@ -215,16 +220,16 @@ let shuttingDown = false;
 function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`\n[Shutdown] ${signal} received — closing server...`);
+  logger.info({ signal }, 'shutdown: closing server');
   const forceExit = setTimeout(() => {
-    console.error('[Shutdown] forced exit after 10s');
+    logger.error('shutdown: forced exit after 10s');
     process.exit(1);
   }, 10000);
   forceExit.unref();
   io.close();
   httpServer.close(async () => {
     try { await pool.end(); } catch { /* ignore */ }
-    console.log('[Shutdown] clean');
+    logger.info('shutdown: clean');
     process.exit(0);
   });
 }

@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { logger } from './logger.js';
 
 const { Pool } = pg;
 
@@ -6,9 +7,9 @@ const { Pool } = pg;
 // failing loudly, and a real credential must never live in source (or git history).
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
-  console.error(
-    '[DB] FATAL: DATABASE_URL is not set — refusing to start.\n' +
-    '     Configure it in backend/.env (see .env.example).'
+  logger.error(
+    '[DB] FATAL: DATABASE_URL is not set — refusing to start. ' +
+    'Configure it in backend/.env (see .env.example).'
   );
   process.exit(1);
 }
@@ -26,7 +27,7 @@ export const pool = new Pool({
 });
 
 pool.on('error', (err) => {
-  console.error('[DB] Unexpected pool error:', err.message);
+  logger.error({ err }, '[DB] unexpected pool error');
 });
 
 export async function query(text, params) {
@@ -34,10 +35,10 @@ export async function query(text, params) {
   try {
     const res = await pool.query(text, params);
     const ms = Date.now() - start;
-    if (ms > 200) console.log(`[DB] slow query (${ms}ms): ${text.slice(0, 80)}`);
+    if (ms > 200) logger.warn({ ms, sql: text.slice(0, 80) }, '[DB] slow query');
     return res;
   } catch (err) {
-    console.error(`[DB] query failed: ${err.message}\n  SQL: ${text.slice(0, 120)}`);
+    logger.error({ err, sql: text.slice(0, 120) }, '[DB] query failed');
     throw err;
   }
 }

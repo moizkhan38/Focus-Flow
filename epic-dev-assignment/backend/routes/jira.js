@@ -232,15 +232,15 @@ router.post('/jira/sprint/:sprintId/complete', async (req, res) => {
       try {
         await jira.moveIssueToSprint(nextSprint.id, keys);
         movedKeys.push(...keys);
-        console.log(`[Complete] Moved ${keys.length} incomplete issues to ${nextSprint.name}`);
+        req.log.info(`[Complete] Moved ${keys.length} incomplete issues to ${nextSprint.name}`);
       } catch (err) {
-        console.warn(`[Complete] Failed to move issues: ${err.message}`);
+        req.log.warn(`[Complete] Failed to move issues: ${err.message}`);
       }
     }
 
     // 5. Close current sprint
     await jira.closeSprint(sprintId);
-    console.log(`[Complete] Closed sprint: ${sprint.name}`);
+    req.log.info(`[Complete] Closed sprint: ${sprint.name}`);
 
     // 6. Start next sprint if exists
     let nextSprintStarted = null;
@@ -250,9 +250,9 @@ router.post('/jira/sprint/:sprintId/complete', async (req, res) => {
         const sprintEndDate = nextSprint.endDate || new Date(new Date(sprintStartDate).getTime() + 14 * 86400000).toISOString();
         await jira.startSprint(nextSprint.id, sprintStartDate, sprintEndDate, boardId);
         nextSprintStarted = { id: nextSprint.id, name: nextSprint.name, state: 'active' };
-        console.log(`[Complete] Started next sprint: ${nextSprint.name}`);
+        req.log.info(`[Complete] Started next sprint: ${nextSprint.name}`);
       } catch (err) {
-        console.warn(`[Complete] Failed to start next sprint: ${err.message}`);
+        req.log.warn(`[Complete] Failed to start next sprint: ${err.message}`);
       }
     }
 
@@ -298,7 +298,7 @@ router.post('/jira/sprint/:sprintId/complete', async (req, res) => {
       isLastSprint: !nextSprint,
     });
   } catch (err) {
-    console.error('[Complete] Sprint completion failed:', err.message);
+    req.log.error('[Complete] Sprint completion failed:', err.message);
     sendUpstreamError(res, err);
   }
 });
