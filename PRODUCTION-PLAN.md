@@ -516,7 +516,7 @@ CREATE TABLE IF NOT EXISTS org_integrations (
 **Spec:** On push/PR: frontend `npm ci && npm run build`; backend `npm ci` + `node --check server.js` (+ `npm run lint` if configured); python `py_compile` both apps; `gitleaks` action (or a grep-based fallback job) for secret patterns.
 **Verify (Fable):** push a branch → workflow green; introduce a fake `ghp_xxxx` in a test commit on a throwaway branch → scan fails (then delete branch).
 
-### Step 3.5 — Hosting decision (D3) + deploy runbook `[ ]` **USER-ACTION (decision)**
+### Step 3.5 — Hosting decision (D3) + deploy runbook `[x]` **USER-ACTION (decision)**
 **Size:** M · **Owner:** USER decides; Opus writes `DEPLOYMENT.md`
 **Spec:** Present the two packaged options (both already satisfied by 3.1):
 - **(a) Managed PaaS:** frontend on Vercel/Netlify (SPA rewrites config included), backend+flask+bot on Railway/Render from Dockerfiles, managed Postgres (Neon/Railway) with `DATABASE_SSL=true`; set `CORS_ORIGINS`, `VITE_API_URL`, `VITE_SOCKET_URL`, Clerk **production** instance keys + allowed origins; custom domain + TLS automatic.
@@ -617,8 +617,17 @@ credential-over-the-wire. Decide deliberately; don't bolt it on.
 | `INTERNAL_API_KEY` | 0 | shared with flask + bot |
 | `DEV_REFRESH_CRON` | 0 | default `0 3 * * *` |
 | `CLERK_SECRET_KEY` | 1 | |
+| `CLERK_PUBLISHABLE_KEY` | 1 | backend also needs it (clerkMiddleware) |
 | `CREDENTIALS_MASTER_KEY` | 2 | base64 32B; back it up — losing it = clients reconnect integrations |
+| `LOG_LEVEL` | 3 | pino level, default `info` |
 | ~~`JIRA_DOMAIN/EMAIL/API_TOKEN/BOARD_ID`, `GITHUB_TOKEN`~~ | — | **removed in 2.8** (per-org now) |
+
+### root compose (`.env` at repo root — used by `docker-compose.prod.yml`)
+| Var | Phase | Notes |
+|---|---|---|
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | 3 | compose postgres + backend DATABASE_URL (VPS/compose path only) |
+| `FRONTEND_PORT` / `BACKEND_PORT` | 3 | published host ports (default 8080 / 3003) |
+| `VITE_API_URL` / `VITE_SOCKET_URL` / `VITE_CLERK_PUBLISHABLE_KEY` | 3 | frontend build args (public) |
 
 ### frontend (`.env` at build time — ALL PUBLIC)
 | Var | Phase | Notes |
@@ -631,9 +640,11 @@ credential-over-the-wire. Decide deliberately; don't bolt it on.
 | Var | Phase | Notes |
 |---|---|---|
 | `GEMINI_API_KEY` | 0 | platform-owned (D5) |
+| `GEMINI_MODEL` | model-fix | default `gemini-flash-lite-latest` |
 | `FLASK_DEBUG` / `HOST` / `PORT` | 0 | default false / 127.0.0.1 / 5000 |
 | `CORS_ORIGINS` | 0 | |
 | `INTERNAL_API_KEY` | 0 | must match backend |
+| `LOG_LEVEL` | 3 | Python logging level, default `INFO` |
 
 ### standup-bot (`.env`)
 | Var | Phase | Notes |
@@ -647,6 +658,9 @@ credential-over-the-wire. Decide deliberately; don't bolt it on.
 | `ADMIN_API_KEY` | 0 | gates `/test/*`; unset = routes 404 |
 | `REMINDER_HOUR` / `REMINDER_MINUTE` | 0 | default 9 / 30 |
 | `STANDUP_ORG_ID` | 1 | Clerk org id this bot posts into |
+| `GEMINI_MODEL` | model-fix | default `gemini-flash-lite-latest` |
+| `STANDUP_DATA_FILE` | 3 | override local JSON path (compose volume) |
+| `LOG_LEVEL` | 3 | Python logging level, default `INFO` |
 | `HOST` / `PORT` | 0 | default 127.0.0.1 / 3000 |
 
 ---
@@ -687,6 +701,7 @@ credential-over-the-wire. Decide deliberately; don't bolt it on.
 | 2026-07-16 | 3.3 | `p3.3: /api/ready readiness probe (pg check) + probe docs` | server.js: new open `GET /api/ready` — `pingDb()` → `200 {status:'ready',db:true}` / `503 {status:'not ready',db:false}`. Registered next to `/api/health`, before the rate limiter + auth gate (never throttled/blocked); already in httpLogger's autoLogging ignore. Semantics documented inline: **health = liveness (no deps → restart signal)**, **ready = readiness (deps → LB traffic gate; pull a DB-less instance instead of killing it)**. Flask + bot keep their `/api/health` (unchanged, per spec). Probe paths documented in `docker-compose.prod.yml` (backend service comment); container HEALTHCHECK stays on /api/health (liveness). smoke-test.mjs: +open-probe assertion `GET /api/ready → 200 {db:true}` (same-commit contract add). **Verified LIVE, both branches, without touching the user's Postgres:** live instance (DB up) → health 200 + ready 200 {db:true}; 2nd instance booted with an UNREACHABLE DATABASE_URL (`…@127.0.0.1:5999`, lazy pool so no boot fail-fast) → health stays **200** while ready is **503 {db:false}**. Full smoke 28 PASS/0 FAIL. |
 | 2026-07-16 | 3.4 | `p3.4: CI — build + secret scan on push/PR` | New `.github/workflows/ci.yml`, 4 parallel jobs (concurrency-cancel on same ref): **frontend** (node 22, npm ci, npm run build), **backend** (npm ci, `node --check server.js`, `npm test` — verified the suites run WITHOUT a DB, so no Postgres service needed; a stray db.js import would fail-fast, itself a useful signal), **python** (setup 3.12, `py_compile` web_app.py + app.py — no deps since py_compile doesn't import), **secret-scan** (grep-based, no gitleaks-action/license: `git grep -nIE` real token shapes WITH length quantifiers — ghp_/github_pat_/ATATT/xox[baprs]-/AIza/sk_(live|test)_ — excluding *.md/*.lock/package-lock.json/.github/**; pk_live/pk_test publishable keys intentionally NOT scanned). **Verified locally before push:** ci.yml YAML parses; `npm test` green with DATABASE_URL unset (32/32); secret grep = clean on the tree, does NOT self-match the workflow's own regexes (literal brackets ≠ quantified alnums), and DOES catch a fake `ghp_`+36 token (the plan's negative test). Live GitHub Actions run confirmed after push: run 29598660217 on commit `52f6f75` → **conclusion success, all 4 jobs green** (Frontend build: npm ci + build; Backend: npm ci + node --check + npm test; Python compile; Secret scan) — queried via the public Actions API (no gh CLI on this box). |
 | 2026-07-16 | 3.7 | (CLAUDE.md is gitignored — local-only, no commit; auto-loads each session) | Rewrote the stale post-migration sections of `.claude/CLAUDE.md`. **State Management**: Auth → Clerk (orgs, membership-required, ClerkProvider/AuthGuard/OrganizationSwitcher; old fake login + `focus-flow-auth` deleted in 1.8); Projects/Developers/Retros → Postgres via `/api/db/*` org-scoped (was localStorage) with the `useProjects` context / SWR shapes; kept theme + wizard-drafts as the only legitimate localStorage (D4) + an explicit "localStorage now holds ONLY …" line. **Service run commands**: local (node/venv python per service, incl. the standup bot as the 4th) + production (`docker compose … up --build`, waitress for Flask, nginx for the frontend, internal-only Flask/bot) + probe paths (health=liveness, ready=readiness). The env block + Per-Org Integrations architecture were already fixed in 2.8. Conventions/architecture-diagram/API-contract sections kept. **Verify:** grep confirms zero `admin/1234` (literal gone, not just negated), zero localStorage-as-source-of-truth for projects/developers, zero `JIRA_API_TOKEN=` config claim; bot service documented (run cmd + env). |
+| 2026-07-16 | 3.5 | `p3.5: hosting decision D3 = Managed PaaS; DEPLOYMENT.md runbook` | **USER decision: Managed PaaS** (recommended option — lowest ops burden for a solo launch: auto-TLS, managed PG backups, no server to patch). New `DEPLOYMENT.md`: prod architecture + reachability (frontend/backend public; **Flask internal-only**; **bot public for `/slack/*` only**, gated elsewhere — the one nuance vs compose's all-internal); master-key backup warning up top; secret-gen commands; managed-PG (`DATABASE_SSL=true`, auto-migrate via entrypoint); **Clerk PROD instance** checklist (pk_live/sk_live to the right places, allowed origins, dev orgs don't carry over); per-service deploy tables (§4–7); **Slack prod URL updates** (events/command/interactivity → bot prod host, re-verify); SPA rewrites (Vercel/Netlify) + the split-origin CORS wiring (VITE_API_URL=backend, CORS_ORIGINS=frontend); **post-deploy smoke checklist** (health/ready, 401 sweep, WSS, sign-up→wizard→save E2E, integration connect + sync, two-org isolation, no mixed-content, JSON logs no-tokens, Lighthouse). Single-VPS+Compose kept as Appendix B (same Dockerfiles). Appendix A of the plan updated with the Phase-3/model-fix vars (`CLERK_PUBLISHABLE_KEY`, `LOG_LEVEL` ×3, `GEMINI_MODEL` ×2, `STANDUP_DATA_FILE`, root-compose block). **Verify:** scripted check — all 39 distinct Appendix-A env vars appear in DEPLOYMENT.md; decision recorded here. Deploy execution = 3.6 (user's accounts/DNS). |
 
 # Verification Log (Fable appends; newest last)
 | Date | Step | Result | Evidence |
