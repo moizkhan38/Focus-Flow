@@ -29,7 +29,7 @@ Four services (all env-driven, see `.env.example` files):
 PowerShell `Start-Process -WindowStyle Hidden` with `-WorkingDirectory` per service.
 Postgres 18 runs as a Windows service (`postgresql-x64-18`), db `focusflow`.
 
-## Where we are: Phase 0 ✅ G0 ✅ Phase 1 ✅ G1 ✅ Phase 2 ✅ G2 ✅ — **next is PHASE 3 (infra/launch)**
+## Where we are: Phase 0–2 ✅ G0/G1/G2 ✅ · Phase 3 code ✅ (3.1–3.5, 3.7) — **next is 3.6 DEPLOY (needs the user) → G3 launch**
 
 **Phase 0 (p0.0–p0.9)** — hardening: all 5 leaked secrets rotated + verified live; hardcoded
 DB password removed (was in git history — rotated, moot); Flask debug-RCE killed + internal-key
@@ -162,14 +162,24 @@ written** — its org-scoped API (1.6) has no caller; assignments actually persi
 `projects.raw` JSONB. Nothing is lost, but the table + endpoints are dead weight. Also, Jira
 auto-creates an empty dateless "<KEY> Sprint 1" with every new Scrum board — not ours, ignore it.
 
-## NEXT: PHASE 3 — production infra & launch (3.1–3.7)
+## Phase 3 ✅ code-complete (2026-07-16) — infra & launch prep
 
-3.1 Dockerfiles + compose (prod parity) → 3.2 structured logging + request IDs (pino) → 3.3
-`/api/ready` readiness probe → 3.4 CI (build + gitleaks secret scan) → **3.5 hosting decision D3
-= USER-ACTION** (managed PaaS vs single VPS) + `DEPLOYMENT.md` → 3.6 deploy + prod smoke →
-**3.7 rewrite `.claude/CLAUDE.md`** (it's gitignored, so local-only; already carries a correct
-"Per-Org Integrations" section added in 2.8, but the auth/persistence/localStorage claims elsewhere
-are still pre-migration). Gate G3 = launch.
+- **3.1 Docker**: 4 Dockerfiles + `docker-compose.prod.yml` + `.dockerignore`s + frontend `nginx.conf` + root `.env.example` + `.gitattributes` (LF for shell/Dockerfiles). Backend = node:22 multi-stage, non-root, entrypoint migrates-then-serves. Flask/bot = python:3.12 + **waitress** (NOT gunicorn — the bot's in-process APScheduler would double-fire reminders under `-w N`). Frontend = build→nginx (SPA + `/api`+`/socket.io` proxy w/ `resolver`). Only frontend+backend publish ports. **Docker isn't installed here** → live `docker compose up` deferred to a Docker host; statically validated (YAML parse, lockfiles, LF).
+- **3.2 Logging**: `logger.js` = pino + pino-http. Request ids (inbound `X-Request-Id` honored + echoed), `req.log` child loggers, redaction of auth headers + `apiToken`/`token`/`password`. Flask+bot: `LOG_LEVEL` + timestamps. **Verified live.**
+- **3.3 Readiness**: open `GET /api/ready` (pg check → 200/503); `/api/health` stays liveness. Both branches verified.
+- **3.4 CI**: `.github/workflows/ci.yml` — frontend build, backend (npm ci + node --check + npm test), python py_compile, grep secret-scan. **Live Actions run green (all 4 jobs).**
+- **3.5 Hosting (D3)**: **USER chose Managed PaaS.** `DEPLOYMENT.md` written (all 39 env vars covered). Bot needs a PUBLIC url for `/slack/*`; Flask internal-only.
+- **3.7 CLAUDE.md**: rewritten (Clerk auth, Postgres persistence, waitress/docker cmds, bot service). Gitignored → local-only, auto-loads.
 
-Decisions locked: D1 encrypted tokens now/OAuth Phase 4 · D2 Clerk · D3 hosting deferred ·
-D4 Postgres persistence · D5 platform Gemini key · D6 bot single-workspace v1.
+Harness after Phase 3: **backend 32 · frontend 18 · flask 22 · bot 10 · smoke 28/0**. New deps: pino@9, pino-http@10.
+
+## NEXT: 🚧 3.6 DEPLOY — needs the user (accounts + DNS), then G3 launch
+
+Follow **`DEPLOYMENT.md`** (Managed PaaS path). USER provides: PaaS accounts (Railway/Render + Vercel/Netlify),
+managed Postgres, a **Clerk production instance** (fresh pk_live/sk_live — dev orgs don't carry over), domain/DNS,
+Slack app prod URLs. Opus assists + runs the post-deploy smoke checklist against the live URL.
+⚠️ **Back up `CREDENTIALS_MASTER_KEY` off-machine BEFORE deploying** — losing it = every org must reconnect integrations.
+G3 launch gate = prod smoke green + managed-PG backups ON + uptime monitor on `/api/ready` + `git tag v1.0-saas-launch`.
+
+Decisions locked: D1 encrypted tokens now/OAuth Phase 4 · D2 Clerk · **D3 Managed PaaS** · D4 Postgres ·
+D5 platform Gemini key · D6 bot single-workspace v1 · **D7 one Slack workspace ↔ one org (Phase 4)**.
