@@ -1,0 +1,13 @@
+.venv
+venv
+__pycache__
+*.pyc
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+tests
+standup_data.json
+Dockerfile
+.dockerignore

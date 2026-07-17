@@ -1,0 +1,98 @@
+# Focus Flow — production-parity stack.
+#
+#   docker compose -f docker-compose.prod.yml up --build
+#
+# Env model:
+#  - App SECRETS come from each service's own .env (env_file) — the same files
+#    you already run locally. Nothing secret lives in this compose file.
+#  - Infra WIRING (DB host, inter-service URLs) is set in `environment:` here so
+#    it points at compose service names instead of localhost. `environment`
+#    overrides `env_file`, so your .env files stay host-agnostic and unedited.
+#  - A few values are read from a root .env via ${VAR} interpolation
+#    (POSTGRES_PASSWORD, the public VITE_* build args). See .env.example alongside.
+#
+# Exposure: only `frontend` and `backend` publish host ports. postgres, flask and
+# bot are reachable only on the internal compose network.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}
+      POSTGRES_DB: ${POSTGRES_DB:-focusflow}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-focusflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # No published port — internal network only.
+
+  backend:
+    build: ./epic-dev-assignment/backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./epic-dev-assignment/backend/.env
+    environment:
+      # Override the .env's localhost values with compose service addresses.
+      NODE_ENV: production
+      PORT: 3003
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-focusflow}
+      FLASK_URL: http://flask:5000
+      FOCUS_FLOW_URL: http://bot:3000
+      TRUST_PROXY: 1
+    ports:
+      - "${BACKEND_PORT:-3003}:3003"
+
+  flask:
+    build: ./epic-generator
+    restart: unless-stopped
+    env_file:
+      - ./epic-generator/.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 5000
+      # Only the backend calls Flask; lock CORS to the internal caller.
+      CORS_ORIGINS: http://backend:3003
+    # No published port — internal network only.
+
+  bot:
+    build: ./standup-bot
+    restart: unless-stopped
+    env_file:
+      - ./standup-bot/.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      STANDUP_DATA_FILE: /app/data/standup_data.json
+      # Express reaches the bot here; the bot posts standups back to Express.
+      EXPRESS_DB_URL: http://backend:3003
+    volumes:
+      - botdata:/app/data
+    # No published port — internal network only. (Slack ingress terminates at
+    # the backend / reverse proxy in front of the stack, not here.)
+
+  frontend:
+    build:
+      context: ./epic-dev-assignment/frontend
+      args:
+        # PUBLIC values baked into the bundle at build time. Empty API/SOCKET
+        # URL = same-origin: nginx proxies /api and /socket.io to the backend.
+        VITE_API_URL: ${VITE_API_URL:-}
+        VITE_SOCKET_URL: ${VITE_SOCKET_URL:-}
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?set VITE_CLERK_PUBLISHABLE_KEY in the root .env}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+
+volumes:
+  pgdata:
+  botdata:

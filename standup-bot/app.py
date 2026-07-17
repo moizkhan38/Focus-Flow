@@ -16,8 +16,11 @@ from apscheduler.triggers.cron import CronTrigger
 load_dotenv()
 
 # Resolve the data file relative to this script, not the process CWD.
+# STANDUP_DATA_FILE overrides the location so a container can point it at a
+# mounted volume (otherwise the file — and any standups not yet flushed to
+# Postgres — vanishes on every redeploy).
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STANDUP_JSON_PATH = os.path.join(BASE_DIR, "standup_data.json")
+STANDUP_JSON_PATH = os.environ.get("STANDUP_DATA_FILE") or os.path.join(BASE_DIR, "standup_data.json")
 
 # --- Security / runtime config ---
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
