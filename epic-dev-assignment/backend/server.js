@@ -69,7 +69,9 @@ app.use(clerkMiddleware({
   secretKey: process.env.CLERK_SECRET_KEY,
 }));
 
-// Liveness check — registered BEFORE the rate limiter so health probes are never throttled.
+// Liveness — no dependencies, always 200 while the process is up. Used to decide
+// whether to RESTART the container. Registered before the rate limiter + auth gate
+// so probes are never throttled or blocked.
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'running',
@@ -77,6 +79,14 @@ app.get('/api/health', (req, res) => {
     version: '1.0.0',
     timestamp: new Date().toISOString(),
   });
+});
+
+// Readiness — checks dependencies (Postgres). Used by load balancers/orchestrators
+// to decide whether to ROUTE TRAFFIC here: 200 when the DB is reachable, 503 when
+// not (so a booting/DB-less instance is pulled from rotation without being killed).
+app.get('/api/ready', async (req, res) => {
+  const dbOk = await pingDb();
+  res.status(dbOk ? 200 : 503).json({ status: dbOk ? 'ready' : 'not ready', db: dbOk });
 });
 
 // Global rate limit across the API (the stricter AI limiter still applies in epics.js).

@@ -117,6 +117,14 @@ async function expressChecks() {
     dbUp = true;
   }, { soft: true });
 
+  // Readiness (3.3): open probe, 200 {db:true} when Postgres is reachable.
+  // (Liveness /api/health above stays 200 regardless of the DB.)
+  await check('express', 'GET /api/ready → 200 {db:true} (open probe)', async () => {
+    const r = await http('GET', `${API}/api/ready`, undefined, 15000, { auth: false });
+    expect(r.status === 200, `status ${r.status}: ${r.text.slice(0, 120)}`);
+    expect(r.json?.db === true, `not ready: ${r.text.slice(0, 120)}`);
+  }, { soft: true });
+
   await check('express', 'disallowed Origin gets no CORS allow header', async () => {
     const res = await fetch(`${API}/api/health`, { headers: { Origin: 'https://evil.example' } });
     expect(!res.headers.get('access-control-allow-origin'), 'ACAO header present for hostile origin');

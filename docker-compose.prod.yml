@@ -34,6 +34,10 @@ services:
   backend:
     build: ./epic-dev-assignment/backend
     restart: unless-stopped
+    # Probe paths: GET /api/health = liveness (no deps → restart signal); the
+    # container HEALTHCHECK (in the Dockerfile) uses it. GET /api/ready =
+    # readiness (checks Postgres → 200/503); point a load balancer / orchestrator
+    # traffic gate at /api/ready so a DB-less instance is pulled, not killed.
     depends_on:
       postgres:
         condition: service_healthy
