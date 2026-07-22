@@ -194,6 +194,70 @@ See [`PRODUCTION-PLAN.md` Appendix A](PRODUCTION-PLAN.md#appendix-a--environment
 
 ---
 
+## Appendix C — Railway quick-deploy (fastest backend path)
+
+Frontend stays on Vercel (already live). This deploys the backend half. Minimum
+for **AI epic generation** to work end to end: Postgres + backend (Express) +
+Flask. The bot is optional (Slack standups only).
+
+### Pre-req: generate two production secrets (don't reuse the local ones)
+The cloud DB is empty, so a fresh master key is correct (and keeps the local key local):
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"  # CREDENTIALS_MASTER_KEY
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"       # INTERNAL_API_KEY (same value in backend + flask)
+```
+Also: **enable Gemini billing** on the key's Google Cloud project, or generation 429s.
+
+### Stage 1 — Postgres
+1. railway.app → sign in with GitHub → **New Project**.
+2. **+ New → Database → PostgreSQL**. Railway provisions it and exposes `DATABASE_URL` as a reference variable.
+
+### Stage 2 — Backend (Express), public
+1. In the same project: **+ New → GitHub Repo** → pick the Focus-Flow repo.
+2. Service **Settings → Source → Root Directory** = `epic-dev-assignment/backend`. Railway detects the Dockerfile.
+3. Service **Settings → Networking → Generate Domain** → gives a public URL like `focusflow-backend-production.up.railway.app`.
+4. **Variables** (Settings → Variables):
+   | Var | Value |
+   |---|---|
+   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (reference the PG service) |
+   | `DATABASE_SSL` | `false` (Railway private network); `true` if you use the public PG URL |
+   | `CLERK_SECRET_KEY` | `sk_test_…` (the SAME Clerk instance as the frontend's `pk_test`) |
+   | `CLERK_PUBLISHABLE_KEY` | `pk_test_…` |
+   | `CREDENTIALS_MASTER_KEY` | the base64 key you generated |
+   | `INTERNAL_API_KEY` | the hex key you generated |
+   | `CORS_ORIGINS` | `https://focusflowpk.com,https://www.focusflowpk.com` |
+   | `FLASK_URL` | `http://${{flask.RAILWAY_PRIVATE_DOMAIN}}:${{flask.PORT}}` (fill after Stage 3) |
+   | `TRUST_PROXY` | `1` |
+   | `NODE_ENV` | `production` |
+   | `LOG_LEVEL` | `info` |
+5. The entrypoint runs migrations automatically on first boot. Check **Deploy logs** for `[entrypoint] running migrations…` then `backend listening`.
+6. Verify: `https://<backend-domain>/api/health` → 200, `/api/ready` → `{db:true}`.
+
+### Stage 3 — Flask (epic-generator), private
+1. **+ New → GitHub Repo** → same repo → **Root Directory** = `epic-generator`.
+2. Do **NOT** generate a public domain (internal only). Railway gives it a private domain automatically.
+3. **Variables**:
+   | Var | Value |
+   |---|---|
+   | `GEMINI_API_KEY` | your Gemini key (billing enabled) |
+   | `GEMINI_MODEL` | `gemini-flash-lite-latest` |
+   | `INTERNAL_API_KEY` | **same** value as the backend |
+   | `FLASK_DEBUG` | `false` |
+4. Back on the **backend** service, set `FLASK_URL` = `http://${{flask.RAILWAY_PRIVATE_DOMAIN}}:${{flask.PORT}}` (Railway reference vars; `flask` = the Flask service's name). Redeploy the backend so it picks this up.
+
+### Stage 4 — Point the frontend at the backend
+1. Vercel → project → **Settings → Environment Variables**:
+   - `VITE_API_URL` = `https://<backend-domain>` (Stage 2 domain, no trailing slash)
+   - `VITE_SOCKET_URL` = same value
+2. **Redeploy** the Vercel frontend (env vars bake in at build time).
+
+### Verify end to end
+- focusflowpk.com → sign in → **New Project** → generate epics → should return epics (not "Load failed").
+- If it 429s: Gemini billing isn't enabled yet.
+- If CORS error in console: `CORS_ORIGINS` on the backend must list your exact frontend origin.
+
+---
+
 ## Appendix B — Single VPS + Compose (alternative to the chosen PaaS path)
 
 Kept for completeness; the same Dockerfiles serve it.
