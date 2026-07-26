@@ -11,7 +11,7 @@ import {
   ArrowLeft, ArrowRight, Columns3, Users, BookOpen, CheckCircle2, Clock, AlertTriangle,
   TrendingUp, TrendingDown, BarChart3, ChevronDown, ExternalLink, RefreshCw,
   Target, Layers, GitBranch, Activity, Calendar, Shield, Flame, Bug,
-  ClipboardCheck, UserPlus, LayoutDashboard, FileText, Trophy
+  ClipboardCheck, UserPlus, LayoutDashboard, FileText, Trophy, Pencil
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis,
@@ -41,6 +41,107 @@ const chartTooltip = {
   contentStyle: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', fontSize: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.08)' },
   itemStyle: { color: '#1f2937' }, labelStyle: { color: '#6b7280' }
 };
+
+// ─── Inline editing for a saved project ──────────────────────────────────────
+// A saved project used to be entirely read-only: a single wrong word meant
+// re-running the wizard. Edits here persist through useProjects, which
+// debounces a write of the whole project object to Postgres.
+
+/**
+ * `fields`: { key, label, value, type: 'text' | 'textarea' | 'number' | 'list', rows }
+ * 'list' edits an array (a test case's expected results) as one entry per line.
+ */
+function InlineEdit({ title, fields, onSave, onCancel }) {
+  const [draft, setDraft] = useState(() =>
+    Object.fromEntries(
+      fields.map((f) => [f.key, f.type === 'list' ? (f.value || []).join('\n') : (f.value ?? '')])
+    )
+  );
+
+  const handleSave = () => {
+    const patch = {};
+    for (const f of fields) {
+      const raw = draft[f.key];
+      if (f.type === 'list') {
+        patch[f.key] = String(raw).split('\n').map((s) => s.trim()).filter(Boolean);
+      } else if (f.type === 'number') {
+        const n = parseInt(raw, 10);
+        patch[f.key] = Number.isFinite(n) ? n : f.value;
+      } else {
+        patch[f.key] = String(raw).trim();
+      }
+    }
+    onSave(patch);
+  };
+
+  const cls =
+    'w-full text-sm rounded-lg border border-gray-200 bg-white text-gray-900 px-3 py-2 ' +
+    'focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      exit={{ opacity: 0, height: 0 }}
+      className="mt-2 overflow-hidden rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-3"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center gap-2 text-xs font-semibold text-blue-700">
+        <Pencil className="w-3 h-3" /> Edit {title}
+      </div>
+      {fields.map((f) => (
+        <div key={f.key}>
+          <label className="block text-[10px] font-mono uppercase tracking-wider text-gray-500 mb-1">
+            {f.label}
+          </label>
+          {f.type === 'textarea' || f.type === 'list' ? (
+            <textarea
+              value={draft[f.key]}
+              onChange={(e) => setDraft((p) => ({ ...p, [f.key]: e.target.value }))}
+              rows={f.rows || 3}
+              placeholder={f.type === 'list' ? 'One per line' : undefined}
+              className={cls + ' resize-vertical'}
+            />
+          ) : (
+            <input
+              type={f.type === 'number' ? 'number' : 'text'}
+              value={draft[f.key]}
+              onChange={(e) => setDraft((p) => ({ ...p, [f.key]: e.target.value }))}
+              className={cls}
+            />
+          )}
+        </div>
+      ))}
+      <div className="flex gap-2">
+        <button
+          onClick={handleSave}
+          className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition-colors"
+        >
+          Save
+        </button>
+        <button
+          onClick={onCancel}
+          className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+/** Small pencil affordance that never triggers the surrounding accordion. */
+function EditIconButton({ onClick, title = 'Edit' }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      title={title}
+      className="rounded p-1 text-gray-400 transition-colors hover:bg-blue-50 hover:text-blue-600"
+    >
+      <Pencil className="w-3 h-3" />
+    </button>
+  );
+}
 
 function ProjectDescription({ text, project }) {
   const [expanded, setExpanded] = useState(false);
@@ -295,11 +396,21 @@ function computeLocalHealth(project) {
   return { score: finalScore, level, factors };
 }
 
-function StoryDetail({ story, assignment }) {
+function StoryDetail({ story, assignment, projectId, epicId, onUpdateStory }) {
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(null); // 'story' | 'ac' | tcIndex
   const hasAC = !!story.acceptanceCriteria;
   const hasTC = story.testCases?.length > 0;
   const expandable = hasAC || hasTC;
+  const canEdit = !!onUpdateStory;
+
+  // Test cases live inside the story, so editing one means writing back the
+  // whole array with that entry replaced.
+  const saveTestCase = (index, patch) => {
+    const next = (story.testCases || []).map((tc, i) => (i === index ? { ...tc, ...patch } : tc));
+    onUpdateStory(projectId, epicId, story.id, { testCases: next });
+    setEditing(null);
+  };
 
   return (
     <div className="rounded-lg bg-gray-50 overflow-hidden">
@@ -319,6 +430,7 @@ function StoryDetail({ story, assignment }) {
           {hasTC && <FileText className="w-3 h-3 text-blue-400" title="Has test cases" />}
           {story.storyPoints > 0 && <span className="text-[10px] font-mono bg-white rounded border border-gray-200 px-1.5 py-0.5 text-gray-500">{story.storyPoints} SP</span>}
           {story.jiraKey && <span className="text-[10px] font-mono text-blue-600">{story.jiraKey}</span>}
+          {canEdit && <EditIconButton title="Edit story" onClick={() => { setEditing('story'); setExpanded(true); }} />}
           {expandable && (
             <motion.div animate={{ rotate: expanded ? 180 : 0 }}>
               <ChevronDown className="w-3 h-3 text-gray-400" />
@@ -326,6 +438,23 @@ function StoryDetail({ story, assignment }) {
           )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {editing === 'story' && (
+          <div className="px-3 pb-3">
+            <InlineEdit
+              title="story"
+              fields={[
+                { key: 'title', label: 'Title', value: story.title, type: 'text' },
+                { key: 'description', label: 'Description', value: story.description, type: 'textarea', rows: 3 },
+                { key: 'storyPoints', label: 'Story Points', value: story.storyPoints, type: 'number' },
+              ]}
+              onCancel={() => setEditing(null)}
+              onSave={(patch) => { onUpdateStory(projectId, epicId, story.id, patch); setEditing(null); }}
+            />
+          </div>
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {expanded && (
           <motion.div
@@ -341,8 +470,22 @@ function StoryDetail({ story, assignment }) {
                   <div className="flex items-center gap-1.5 mb-1.5">
                     <ClipboardCheck className="w-3 h-3 text-emerald-600" />
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Acceptance Criteria</span>
+                    {canEdit && (
+                      <span className="ml-auto">
+                        <EditIconButton title="Edit acceptance criteria" onClick={() => setEditing('ac')} />
+                      </span>
+                    )}
                   </div>
-                  <p className="text-xs text-gray-700 whitespace-pre-line">{story.acceptanceCriteria}</p>
+                  {editing === 'ac' ? (
+                    <InlineEdit
+                      title="acceptance criteria"
+                      fields={[{ key: 'acceptanceCriteria', label: 'Acceptance Criteria', value: story.acceptanceCriteria, type: 'textarea', rows: 5 }]}
+                      onCancel={() => setEditing(null)}
+                      onSave={(patch) => { onUpdateStory(projectId, epicId, story.id, patch); setEditing(null); }}
+                    />
+                  ) : (
+                    <p className="text-xs text-gray-700 whitespace-pre-line">{story.acceptanceCriteria}</p>
+                  )}
                 </div>
               )}
 
@@ -353,9 +496,28 @@ function StoryDetail({ story, assignment }) {
                     <FileText className="w-3 h-3 text-blue-600" />
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700">Test Case</span>
                     {tc.id && <span className="text-[10px] font-mono bg-blue-100 text-blue-600 rounded px-1.5 py-0.5">{tc.id}</span>}
+                    {canEdit && (
+                      <span className="ml-auto">
+                        <EditIconButton title="Edit test case" onClick={() => setEditing(i)} />
+                      </span>
+                    )}
                   </div>
-                  {tc.description && <p className="text-xs text-gray-700 mb-2">{tc.description}</p>}
-                  <div className="space-y-2">
+                  {editing === i && (
+                    <InlineEdit
+                      title={`test case ${tc.id || i + 1}`}
+                      fields={[
+                        { key: 'description', label: 'Description', value: tc.description, type: 'textarea', rows: 2 },
+                        { key: 'preconditions', label: 'Preconditions', value: tc.preconditions, type: 'textarea', rows: 2 },
+                        { key: 'testData', label: 'Test Data', value: tc.testData, type: 'textarea', rows: 2 },
+                        { key: 'userAction', label: 'Steps', value: tc.userAction, type: 'textarea', rows: 2 },
+                        { key: 'expectedResults', label: 'Expected Results (one per line)', value: tc.expectedResults, type: 'list', rows: 4 },
+                      ]}
+                      onCancel={() => setEditing(null)}
+                      onSave={(patch) => saveTestCase(i, patch)}
+                    />
+                  )}
+                  {editing !== i && tc.description && <p className="text-xs text-gray-700 mb-2">{tc.description}</p>}
+                  <div className={`space-y-2 ${editing === i ? 'hidden' : ''}`}>
                     {tc.preconditions && (
                       <div>
                         <span className="text-[10px] font-semibold text-gray-500 uppercase">Preconditions</span>
@@ -397,11 +559,14 @@ function StoryDetail({ story, assignment }) {
 
 function EpicsStories({ project }) {
   const [expandedEpic, setExpandedEpic] = useState(null);
+  const [editingEpic, setEditingEpic] = useState(null);
+  const { updateEpic, updateStory } = useProjects();
 
   return (
     <div>
       <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-        <Layers className="w-4 h-4 text-purple-500" /> Epics & Stories
+        <Layers className="w-4 h-4 text-purple-500" /> Epics &amp; Stories
+        <span className="ml-auto text-[10px] font-normal text-gray-400">Changes save automatically</span>
       </h3>
       <div className="space-y-2">
         {(project.epics || []).map((epic) => {
@@ -447,12 +612,41 @@ function EpicsStories({ project }) {
                     className="overflow-hidden"
                   >
                     <div className="px-4 pb-3 border-t border-gray-100 pt-3 space-y-2">
-                      {epic.description && <p className="text-xs text-gray-500 mb-2">{epic.description}</p>}
+                      {editingEpic === epic.id ? (
+                        <InlineEdit
+                          title="epic"
+                          fields={[
+                            { key: 'title', label: 'Title', value: epic.title, type: 'text' },
+                            { key: 'description', label: 'Description', value: epic.description, type: 'textarea', rows: 3 },
+                          ]}
+                          onCancel={() => setEditingEpic(null)}
+                          onSave={(patch) => { updateEpic(project.id, epic.id, patch); setEditingEpic(null); }}
+                        />
+                      ) : (
+                        <div className="mb-2 flex items-start gap-2">
+                          {epic.description && <p className="text-xs text-gray-500 flex-1">{epic.description}</p>}
+                          <button
+                            onClick={() => setEditingEpic(epic.id)}
+                            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-medium text-blue-600 transition-colors hover:bg-blue-100"
+                          >
+                            <Pencil className="w-3 h-3" /> Edit epic
+                          </button>
+                        </div>
+                      )}
                       {(epic.stories || []).map(story => {
                         const storyAssignment = (project.assignments || []).find(a =>
                           a.story_id ? a.story_id === story.id : false
                         );
-                        return <StoryDetail key={story.id} story={story} assignment={storyAssignment} />;
+                        return (
+                          <StoryDetail
+                            key={story.id}
+                            story={story}
+                            assignment={storyAssignment}
+                            projectId={project.id}
+                            epicId={epic.id}
+                            onUpdateStory={updateStory}
+                          />
+                        );
                       })}
                     </div>
                   </motion.div>
