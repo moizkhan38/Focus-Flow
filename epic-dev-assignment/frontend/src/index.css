@@ -491,6 +491,18 @@
 }
 
 @layer utilities {
+  /* Full height of the *visible* viewport.
+     Mobile browsers report 100vh as taller than what you can actually see (the
+     URL bar and bottom toolbar overlay it), which pushed the sidebar drawer's
+     footer — organization switcher and Logout — below the fold. dvh tracks the
+     real visible area; the vh line above it is the fallback for browsers
+     without dvh support (iOS < 15.4), where it behaves as before.
+     On desktop dvh and vh are identical, so this is a no-op there. */
+  .h-viewport {
+    height: 100vh;
+    height: 100dvh;
+  }
+
   .text-heading { color: var(--text-primary); }
   .text-body { color: var(--text-primary); }
   .text-muted { color: var(--text-secondary); }

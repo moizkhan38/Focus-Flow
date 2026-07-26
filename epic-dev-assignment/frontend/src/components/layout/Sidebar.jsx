@@ -134,12 +134,12 @@ export default function Sidebar() {
       {/* The drawer slides via CSS transform, not framer: an inline transform
           would beat `lg:translate-x-0` and hide the static desktop column. */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex h-screen w-64 max-w-[85vw] flex-shrink-0 flex-col border-r border-gray-200 bg-white transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none dark:border-white/10 dark:bg-gray-900 lg:static lg:z-auto lg:w-56 lg:max-w-none lg:translate-x-0 ${
+        className={`h-viewport fixed inset-y-0 left-0 z-50 flex w-64 max-w-[85vw] flex-shrink-0 flex-col border-r border-gray-200 bg-white transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none dark:border-white/10 dark:bg-gray-900 lg:static lg:z-auto lg:w-56 lg:max-w-none lg:translate-x-0 ${
           open ? 'translate-x-0 shadow-2xl lg:shadow-none' : '-translate-x-full'
         }`}
       >
         {/* Logo */}
-        <div className="flex h-14 items-center gap-2 border-b border-gray-200 dark:border-white/10 px-4">
+        <div className="flex h-14 flex-shrink-0 items-center gap-2 border-b border-gray-200 dark:border-white/10 px-4">
           <LogoMark className="h-7 w-7" />
           <Wordmark className="text-sm font-semibold" />
           <motion.button
@@ -170,8 +170,13 @@ export default function Sidebar() {
 
         </nav>
 
-        {/* Organization + Logout */}
-        <div className="border-t border-gray-200 dark:border-white/10 p-3 space-y-2">
+        {/* Organization + Logout. flex-shrink-0 so a long nav list can never
+            squeeze these out — the nav above scrolls instead. pb accounts for
+            the iPhone home indicator when running as an installed PWA. */}
+        <div
+          className="flex-shrink-0 border-t border-gray-200 dark:border-white/10 p-3 space-y-2"
+          style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+        >
           <div className="px-1">
             <OrganizationSwitcher hidePersonal afterSelectOrganizationUrl="/projects" />
           </div>

@@ -135,8 +135,12 @@ function SidebarLayout({ children }) {
   const { pathname } = useLocation()
   const reduceMotion = useReducedMotion()
 
+  // h-viewport rather than h-screen: on mobile 100vh exceeds the visible area,
+  // which hid the bottom of the scroll container under the browser toolbar. The
+  // inner div is what scrolls, so the URL bar never hides/shows mid-scroll and
+  // dvh stays stable.
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-950">
+    <div className="h-viewport flex overflow-hidden bg-gray-50 dark:bg-gray-950">
       <Sidebar />
       {/* pt-14 clears the fixed mobile top bar; from lg up the sidebar is a
           static column again and no offset is needed. */}
