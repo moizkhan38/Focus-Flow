@@ -8,7 +8,7 @@ export default function Signup() {
       <div className="mb-8 flex flex-col items-center">
         <LogoMark className="mb-3 h-16 w-16" />
         <h1 className="text-2xl font-bold"><Wordmark /></h1>
-        <p className="mt-1 text-sm text-brand-slate">AI-Powered Sprint Management</p>
+        <p className="mt-1 text-center text-sm text-brand-slate">AI-Powered Scrum Master Automation Tool</p>
       </div>
 
       <SignUp routing="path" path="/signup" signInUrl="/login" fallbackRedirectUrl="/projects" />
