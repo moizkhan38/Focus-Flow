@@ -384,7 +384,7 @@ export default function Step3_DeveloperAnalysis() {
               {devInputs.map((dev, index) => (
                 <motion.div
                   key={index}
-                  className="flex gap-2"
+                  className="flex flex-col gap-2 sm:flex-row"
                   initial={{ opacity: 0, x: -12 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
@@ -425,7 +425,7 @@ export default function Step3_DeveloperAnalysis() {
                     <motion.button
                       onClick={() => removeDeveloperInput(index)}
                       disabled={loading}
-                      className="w-10 h-10 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors flex items-center justify-center shrink-0"
+                      className="w-10 h-10 self-end rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors flex items-center justify-center shrink-0 sm:self-auto"
                       whileTap={{ scale: 0.9 }}
                     >
                       <X className="w-4 h-4" />
@@ -504,12 +504,12 @@ export default function Step3_DeveloperAnalysis() {
               >
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                   {/* Summary */}
-                  <div className="p-5">
-                    <div className="flex items-start gap-4">
+                  <div className="p-4 sm:p-5">
+                    <div className="flex flex-wrap items-start gap-3 sm:flex-nowrap sm:gap-4">
                       <img
                         src={dev.avatar_url || dev.avatar || `https://github.com/${dev.username}.png`}
                         alt={dev.username}
-                        className="w-14 h-14 rounded-xl ring-1 ring-gray-200"
+                        className="w-12 h-12 shrink-0 rounded-xl ring-1 ring-gray-200 sm:w-14 sm:h-14"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -541,7 +541,7 @@ export default function Step3_DeveloperAnalysis() {
                         </div>
 
                         {dev.analysis?.totalCommits != null && (
-                          <div className="grid grid-cols-4 gap-4 mt-3">
+                          <div className="grid grid-cols-2 gap-3 mt-3 sm:grid-cols-4 sm:gap-4">
                             {[
                               { label: 'Commits', value: dev.analysis.totalCommits },
                               { label: 'On-Time', value: `${dev.analysis.onTimePercentage}%` },
@@ -567,7 +567,7 @@ export default function Step3_DeveloperAnalysis() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0 ml-auto sm:ml-0">
                         {dev.analysis?.totalCommits != null && (
                           <motion.button
                             onClick={() => toggleExpand(index)}
@@ -603,7 +603,7 @@ export default function Step3_DeveloperAnalysis() {
                         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
                         className="overflow-hidden"
                       >
-                        <div className="px-5 pb-5 pt-5 space-y-5 border-t border-gray-100">
+                        <div className="px-3 pb-5 pt-5 space-y-5 border-t border-gray-100 sm:px-5">
                           {/* Experience banner */}
                           <div className="rounded-2xl bg-gradient-to-r from-teal-50 to-purple-50 border border-gray-200 p-5">
                             <div className="text-xs font-mono uppercase tracking-wider text-gray-400 mb-2">Experience Level</div>

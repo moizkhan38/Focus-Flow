@@ -161,7 +161,7 @@ export default function Step4_Assignment() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sm:p-6">
         <h2 className="text-xl font-bold text-gray-900">Story Assignment Dashboard</h2>
         <p className="text-gray-500 text-sm mt-1 mb-6">
           Auto-assign stories to developers based on expertise matching and workload balancing
@@ -248,7 +248,7 @@ export default function Step4_Assignment() {
 
       {/* Workload Distribution */}
       {assignments.length > 0 && workloadDistribution && (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sm:p-6">
           <h3 className="text-xs font-mono uppercase tracking-wider text-gray-400 mb-4">Workload Distribution</h3>
           <div className="space-y-3">
             {Object.entries(workloadDistribution).map(([username, points], i) => {
@@ -264,8 +264,8 @@ export default function Step4_Assignment() {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.06, duration: 0.35 }}
                 >
-                  <div className="flex items-center gap-2 w-40">
-                    {dev?.avatar && <img src={dev.avatar} alt={username} className="w-7 h-7 rounded-lg ring-1 ring-gray-200" />}
+                  <div className="flex items-center gap-2 w-24 shrink-0 sm:w-40">
+                    {dev?.avatar && <img src={dev.avatar} alt={username} className="w-7 h-7 shrink-0 rounded-lg ring-1 ring-gray-200" />}
                     <span className="text-sm text-gray-600 truncate">{username}</span>
                   </div>
                   <div className="flex-1 h-8 bg-gray-50 rounded-lg overflow-hidden relative border border-gray-200">
@@ -278,7 +278,7 @@ export default function Step4_Assignment() {
                       <span className="text-xs font-mono text-gray-900">{points} pts</span>
                     </motion.div>
                   </div>
-                  <span className="w-12 text-right text-xs font-mono text-gray-400">{percentage.toFixed(0)}%</span>
+                  <span className="w-9 shrink-0 text-right text-xs font-mono text-gray-400 sm:w-12">{percentage.toFixed(0)}%</span>
                 </motion.div>
               );
             })}
@@ -329,7 +329,7 @@ export default function Step4_Assignment() {
                   {/* Epic header — clickable to expand */}
                   <button
                     onClick={() => toggleEpic(group.epic_id)}
-                    className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50 transition-colors"
+                    className="w-full flex items-center gap-2 p-3 text-left hover:bg-gray-50 transition-colors sm:gap-3 sm:p-4"
                   >
                     <span className="text-lg">{icon}</span>
                     <div className="flex-1 min-w-0">
@@ -378,9 +378,9 @@ export default function Step4_Assignment() {
                       >
                         <div className="border-t border-gray-100 divide-y divide-gray-50">
                           {group.stories.map((a, idx) => (
-                            <div key={a.story?.story_id || idx} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50/50 transition-colors">
+                            <div key={a.story?.story_id || idx} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 hover:bg-gray-50/50 transition-colors sm:px-5">
                               {/* Story info */}
-                              <div className="flex-1 min-w-0">
+                              <div className="flex-1 basis-full min-w-0 sm:basis-0">
                                 <div className="flex items-center gap-2 mb-0.5">
                                   <span className={`${badge} bg-indigo-100 text-indigo-700 text-[10px]`}>
                                     {a.story?.story_id || `S${idx + 1}`}
@@ -391,7 +391,7 @@ export default function Step4_Assignment() {
                               </div>
 
                               {/* Assigned developer */}
-                              <div className="flex items-center gap-2 min-w-[140px]">
+                              <div className="flex items-center gap-2 min-w-0 sm:min-w-[140px]">
                                 {a.developer?.avatar && (
                                   <img src={a.developer.avatar} alt={a.developer.username} className="w-6 h-6 rounded-full ring-1 ring-gray-200" />
                                 )}
@@ -413,7 +413,7 @@ export default function Step4_Assignment() {
                               <select
                                 value={a.developer?.username || ''}
                                 onChange={(e) => handleReassign(a.story?.story_id || a.epic?.epic_id, e.target.value)}
-                                className="rounded-lg border border-gray-200 bg-gray-50 text-xs py-1 px-1.5 w-28 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                                className="ml-auto rounded-lg border border-gray-200 bg-gray-50 text-xs py-1 px-1.5 w-24 focus:outline-none focus:ring-1 focus:ring-teal-500 sm:ml-0 sm:w-28"
                               >
                                 <option value={a.developer?.username}>{a.developer?.username}</option>
                                 {developers

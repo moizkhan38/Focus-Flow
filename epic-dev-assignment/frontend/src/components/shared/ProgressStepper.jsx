@@ -51,8 +51,8 @@ export default function ProgressStepper() {
                   )}
                   <motion.div
                     className={`
-                      relative w-10 h-10 rounded-xl flex items-center justify-center
-                      text-sm font-mono font-semibold transition-colors duration-300
+                      relative w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center
+                      text-xs sm:text-sm font-mono font-semibold transition-colors duration-300
                       ${isCompleted ? 'bg-teal-100 text-teal-700 cursor-pointer group-hover:bg-teal-200' : ''}
                       ${isCurrent ? 'bg-teal-500 text-white cursor-pointer' : ''}
                       ${isUpcoming ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}
@@ -73,9 +73,9 @@ export default function ProgressStepper() {
                     )}
                   </motion.div>
                 </button>
-                <div className="mt-2.5 text-center">
+                <div className="mt-2 sm:mt-2.5 text-center">
                   <div className={`
-                    text-[11px] font-mono uppercase tracking-widest transition-colors duration-300
+                    text-[9px] sm:text-[11px] font-mono uppercase tracking-wide sm:tracking-widest transition-colors duration-300
                     ${isCurrent ? 'text-teal-600' : ''}
                     ${isCompleted ? 'text-teal-500' : ''}
                     ${isUpcoming ? 'text-gray-400' : ''}
@@ -83,7 +83,7 @@ export default function ProgressStepper() {
                     {step.label}
                   </div>
                   <div className={`
-                    text-xs mt-0.5 transition-colors duration-300
+                    text-[10px] sm:text-xs mt-0.5 transition-colors duration-300
                     ${isCurrent ? 'text-gray-900 font-medium' : ''}
                     ${isCompleted ? 'text-gray-500' : ''}
                     ${isUpcoming ? 'text-gray-400' : ''}
@@ -93,7 +93,7 @@ export default function ProgressStepper() {
                 </div>
               </div>
               {index < steps.length - 1 && (
-                <div className="flex-1 mx-1 -mt-6 relative">
+                <div className="flex-1 mx-1 -mt-5 sm:-mt-6 relative">
                   <div className="h-px w-full bg-gray-200" />
                   {isCompleted && (
                     <motion.div

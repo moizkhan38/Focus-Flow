@@ -45,7 +45,7 @@ export default function SprintCompletionModal({
           className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl border border-gray-200 mb-12"
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-6">
             <h2 className="text-lg font-semibold text-gray-900">
               {completionResult ? 'Sprint Completed' : 'Complete Sprint'}
             </h2>
@@ -58,7 +58,7 @@ export default function SprintCompletionModal({
 
           {/* Post-completion success view */}
           {completionResult ? (
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-4">
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
                 <div className="flex items-center gap-2 text-emerald-700 mb-3">
                   <CheckCircle2 className="h-5 w-5" />
@@ -79,7 +79,7 @@ export default function SprintCompletionModal({
               </div>
 
               {/* Export buttons */}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-medium text-gray-500">Export report:</span>
                 <button onClick={() => handleExport('pdf')} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50">
                   <FileText className="h-3.5 w-3.5" /> PDF
@@ -100,13 +100,13 @@ export default function SprintCompletionModal({
             </div>
           ) : (
             /* Pre-completion: report preview + action */
-            <div className="p-6 space-y-5">
+            <div className="p-4 sm:p-6 space-y-5">
               {/* Sprint Report Preview */}
               {report && <ReportGenerator report={report} />}
 
               {/* Export buttons */}
               {report && (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs font-medium text-gray-500">Export:</span>
                   <button onClick={() => handleExport('pdf')} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50">
                     <FileText className="h-3.5 w-3.5" /> PDF
@@ -129,7 +129,7 @@ export default function SprintCompletionModal({
               )}
 
               {/* Action buttons */}
-              <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
+              <div className="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-gray-100">
                 <button
                   onClick={onClose}
                   disabled={completing}

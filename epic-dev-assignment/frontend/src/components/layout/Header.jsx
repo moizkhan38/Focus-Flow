@@ -16,28 +16,30 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 backdrop-blur-2xl" style={{ background: 'var(--bg-overlay)' }}>
-      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-[var(--accent-cyan)] via-[var(--accent-purple)] to-[var(--accent-lime)] p-[1px]">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="relative w-9 h-9 flex-shrink-0 rounded-xl bg-gradient-to-br from-[var(--accent-cyan)] via-[var(--accent-purple)] to-[var(--accent-lime)] p-[1px]">
             <div className="w-full h-full rounded-[11px] flex items-center justify-center" style={{ background: 'var(--gradient-border-inner)' }}>
               <Sparkles className="w-4 h-4" style={{ color: 'var(--accent-cyan)' }} />
             </div>
           </div>
-          <div>
-            <h1 className="text-sm font-semibold tracking-tight leading-tight" style={{ color: 'var(--text-primary)' }}>
+          <div className="min-w-0">
+            <h1 className="text-xs sm:text-sm font-semibold tracking-tight leading-tight truncate" style={{ color: 'var(--text-primary)' }}>
               Epic & Dev Assignment
             </h1>
-            <p className="text-[11px] font-mono tracking-wide uppercase" style={{ color: 'var(--text-tertiary)' }}>
+            <p className="hidden sm:block text-[11px] font-mono tracking-wide uppercase" style={{ color: 'var(--text-tertiary)' }}>
               AI-Powered Workflow
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <OrganizationSwitcher hidePersonal afterSelectOrganizationUrl="/projects" />
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          <div className="hidden sm:flex sm:items-center">
+            <OrganizationSwitcher hidePersonal afterSelectOrganizationUrl="/projects" />
+          </div>
           <UserButton />
           <motion.button
             onClick={toggleTheme}
-            className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-300"
+            className="w-9 h-9 flex-shrink-0 rounded-lg flex items-center justify-center transition-colors duration-300"
             style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-card)' }}
             whileTap={{ scale: 0.92 }}
             title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -54,7 +56,7 @@ export default function Header() {
           </motion.button>
           <button
             onClick={handleReset}
-            className="text-xs py-2 px-4 rounded-lg border border-transparent text-danger/70
+            className="text-xs py-2 px-2.5 sm:px-4 rounded-lg border border-transparent text-danger/70
                      hover:bg-danger/10 hover:border-danger/20 hover:text-danger transition-all duration-300"
           >
             Reset

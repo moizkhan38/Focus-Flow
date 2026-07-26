@@ -256,21 +256,21 @@ export default function AssignPage() {
   const availableRosterDevs = rosterLoaded ? rosterDevs : [];
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
+    <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
       <Link to={`/projects/${projectId}/verify`} className="mb-6 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
         <ArrowLeft className="h-4 w-4" />
         Back to Verify
       </Link>
 
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Assign Developers</h1>
-        <p className="mt-1 text-sm text-gray-500">{project.name}</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Assign Developers</h1>
+        <p className="mt-1 text-sm text-gray-500 break-words">{project.name}</p>
       </div>
 
       {error && <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       {/* Developer Selection */}
-      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6">
+      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
             <Users className="h-4 w-4 text-blue-600" />
@@ -463,7 +463,7 @@ export default function AssignPage() {
       {/* Story-Level Assignment Table */}
       {assignments.length > 0 && (
         <div className="mb-6 overflow-hidden rounded-xl border border-gray-200 bg-white">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="px-4 py-4 sm:px-6 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-gray-900">Story Assignments</h2>
             <span className="text-xs text-gray-500">{assignments.length} stories across {assignmentsByEpic.length} epics</span>
           </div>
@@ -498,13 +498,13 @@ export default function AssignPage() {
                           initial={{ opacity: 0, x: -8 }}
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: idx * 0.03, duration: 0.2 }}
-                          className={`flex items-center gap-3 px-6 py-2.5 text-sm transition-colors ${isReassigning ? 'bg-blue-50' : ''}`}
+                          className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 text-sm transition-colors sm:px-6 ${isReassigning ? 'bg-blue-50' : ''}`}
                         >
-                          <div className="flex-1 min-w-0">
+                          <div className="flex-1 basis-full min-w-0 sm:basis-0">
                             <p className="text-gray-800 truncate">{a.story_title}</p>
                             <span className="text-[10px] text-gray-400">{a.story_points} SP</span>
                           </div>
-                          <div className="flex items-center gap-2 min-w-[120px]">
+                          <div className="flex items-center gap-2 min-w-0 sm:min-w-[120px]">
                             {isReassigning ? (
                               <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
                             ) : (
@@ -516,7 +516,7 @@ export default function AssignPage() {
                               </>
                             )}
                           </div>
-                          <span className="text-xs text-gray-500 w-12 text-right">{a.score != null ? `${a.score}%` : '-'}</span>
+                          <span className="text-xs text-gray-500 w-10 sm:w-12 text-right">{a.score != null ? `${a.score}%` : '-'}</span>
                           <motion.span
                             key={a.confidence}
                             initial={{ scale: 0.8, opacity: 0 }}
@@ -530,7 +530,7 @@ export default function AssignPage() {
                           <select
                             value={a.assigned_developer || ''}
                             onChange={(e) => handleReassign(a.story_id, e.target.value)}
-                            className="rounded border border-gray-300 px-1.5 py-1 text-xs focus:border-blue-500 focus:outline-none w-28 transition-colors hover:border-blue-400"
+                            className="ml-auto w-24 rounded border border-gray-300 px-1.5 py-1 text-xs focus:border-blue-500 focus:outline-none sm:ml-0 sm:w-28 transition-colors hover:border-blue-400"
                             disabled={isReassigning}
                           >
                             {!a.assigned_developer && <option value="" disabled>Reassign...</option>}
@@ -551,14 +551,14 @@ export default function AssignPage() {
       )}
 
       {/* Sprint Configuration */}
-      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6">
+      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
         <h2 className="mb-4 text-base font-semibold text-gray-900 flex items-center gap-2">
           <Clock className="h-4 w-4 text-blue-600" />
           Sprint Configuration
         </h2>
 
         <p className="mb-3 text-sm text-gray-500">Set the total project duration. Stories will be distributed across sprints.</p>
-        <div className="flex items-center gap-3 mb-5">
+        <div className="flex flex-wrap items-center gap-3 mb-5">
           <label className="text-sm text-gray-600 w-20">Duration:</label>
           <input
             type="number"
@@ -587,7 +587,7 @@ export default function AssignPage() {
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <label className="text-sm text-gray-600 w-20">Sprints:</label>
           <input
             type="number"
@@ -609,7 +609,7 @@ export default function AssignPage() {
               Suggest optimal
             </button>
           )}
-          <span className="text-xs text-gray-400 ml-auto">
+          <span className="text-xs text-gray-400 sm:ml-auto">
             ~{Math.ceil(totalStories / sprintCount)} stories / sprint
             {' · '}~{Math.round(totalPoints / sprintCount)} SP / sprint
           </span>
@@ -646,7 +646,7 @@ export default function AssignPage() {
 
       {/* Jira Team Mapping */}
       {assignments.length > 0 && (
-        <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6">
+        <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
           <h2 className="mb-1 text-base font-semibold text-gray-900 flex items-center gap-2">
             <UserCheck className="h-4 w-4 text-blue-600" />
             Jira Team Mapping
@@ -658,8 +658,8 @@ export default function AssignPage() {
             {[...new Set(assignments.map(a => a.assigned_developer).filter(Boolean))].map((username) => {
               const dev = selectedDevs.find(d => (d.login || d.username) === username);
               return (
-                <div key={username} className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 w-40 flex-shrink-0">
+                <div key={username} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                  <div className="flex items-center gap-2 sm:w-40 sm:flex-shrink-0">
                     {(dev?.avatar_url || dev?.avatar) && (
                       <img src={dev?.avatar_url || dev?.avatar} className="h-6 w-6 rounded-full" alt="" />
                     )}
@@ -709,7 +709,7 @@ export default function AssignPage() {
       )}
 
       {/* Jira Sync */}
-      <div className="rounded-xl border border-gray-200 bg-white p-6">
+      <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
         <h2 className="mb-4 text-base font-semibold text-gray-900">Sync to Jira</h2>
         <SyncButton
           epics={project.epics}

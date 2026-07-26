@@ -103,7 +103,7 @@ function KanbanColumn({ id, items, config, syncingKey, variant }) {
   return (
     <div ref={setNodeRef} className={`rounded-xl border p-3 flex flex-col transition-colors ${
       isOver ? `${config.dropHighlight} ring-2 ring-inset` : `${config.header} border-gray-200`
-    }`} style={{ minHeight: isMini ? '200px' : '400px' }}>
+    } ${isMini ? 'min-h-[120px] md:min-h-[200px]' : 'min-h-[140px] md:min-h-[400px]'}`}>
       <div className="mb-2 flex items-center gap-2">
         <span className={`h-2 w-2 rounded-full ${config.dot}`} />
         <h2 className={`text-xs font-semibold ${config.text}`}>{id}</h2>
@@ -121,7 +121,7 @@ function KanbanColumn({ id, items, config, syncingKey, variant }) {
         {items.length === 0 && (
           <div className={`h-full flex items-center justify-center text-center text-xs rounded-lg border-2 border-dashed transition-colors ${
             isOver ? 'border-teal-300 text-teal-500 bg-teal-50/50' : 'border-gray-200 text-gray-400'
-          } ${isMini ? 'min-h-[160px]' : 'min-h-[300px]'}`}>
+          } ${isMini ? 'min-h-[80px] md:min-h-[160px]' : 'min-h-[90px] md:min-h-[300px]'}`}>
             {isOver ? 'Drop here' : 'No items'}
           </div>
         )}
@@ -135,9 +135,9 @@ function KanbanSkeleton({ variant }) {
   const isMini = variant === 'mini';
   const cardCount = isMini ? 2 : 3;
   return (
-    <div className="grid grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
       {['To Do', 'In Progress', 'Done'].map(col => (
-        <div key={col} className="rounded-xl border border-gray-200 bg-gray-50 p-3" style={{ minHeight: isMini ? '200px' : '400px' }}>
+        <div key={col} className={`rounded-xl border border-gray-200 bg-gray-50 p-3 ${isMini ? 'min-h-[120px] md:min-h-[200px]' : 'min-h-[140px] md:min-h-[400px]'}`}>
           <div className="flex items-center gap-2 mb-3">
             <div className="h-2 w-2 rounded-full bg-gray-300 animate-pulse" />
             <div className="h-3 w-16 rounded bg-gray-200 animate-pulse" />
@@ -290,8 +290,8 @@ export default function KanbanBoard({ kanban, variant = 'full', title }) {
 
       {/* Mini header */}
       {isMini && title && (
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Columns3 className="w-4 h-4 text-blue-600" />
             <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
             <span className="text-[10px] text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">Live — drag to move</span>
@@ -311,8 +311,8 @@ export default function KanbanBoard({ kanban, variant = 'full', title }) {
 
       {/* Full header with filters */}
       {!isMini && (
-        <div className="mb-4 flex items-center gap-3">
-          <div className="relative flex-1 max-w-xs">
+        <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="relative flex-1 basis-full sm:basis-auto sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
@@ -335,7 +335,7 @@ export default function KanbanBoard({ kanban, variant = 'full', title }) {
               <X className="w-3 h-3" /> Clear
             </button>
           )}
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center gap-2">
             <span className="text-xs text-gray-400">{doneCount}/{totalIssues} done</span>
             <button onClick={kanban.refresh} className="text-xs text-gray-400 hover:text-teal-600 flex items-center gap-1 transition-colors px-3 py-1.5 rounded-lg border border-gray-200 hover:border-teal-300">
               <RefreshCw className="w-3 h-3" /> Sync from Jira
@@ -355,7 +355,7 @@ export default function KanbanBoard({ kanban, variant = 'full', title }) {
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
           {Object.entries(filteredColumns).map(([name, items]) => (
             <KanbanColumn key={name} id={name} items={items} config={colConfig[name]} syncingKey={kanban.syncingKey} variant={variant} />
           ))}

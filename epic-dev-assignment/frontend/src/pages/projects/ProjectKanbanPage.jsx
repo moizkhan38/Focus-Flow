@@ -26,14 +26,14 @@ export default function ProjectKanbanPage() {
   }
 
   return (
-    <div className="px-6 py-8">
+    <div className="px-4 py-6 sm:px-6 sm:py-8">
       <Link to={`/projects/${projectId}`} className="mb-6 inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 transition-colors">
         <ArrowLeft className="h-4 w-4" /> Back to Project
       </Link>
 
       <div className="mb-6 flex items-center gap-3">
-        <Columns3 className="h-5 w-5 text-blue-600" />
-        <h1 className="text-2xl font-bold text-gray-900">{project.name} — Kanban</h1>
+        <Columns3 className="h-5 w-5 shrink-0 text-blue-600" />
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 break-words">{project.name} — Kanban</h1>
       </div>
 
       <KanbanBoard kanban={kanban} variant="full" />

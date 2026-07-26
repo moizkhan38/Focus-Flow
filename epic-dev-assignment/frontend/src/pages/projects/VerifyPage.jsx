@@ -77,20 +77,20 @@ export default function VerifyPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
+    <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
       <Link to={`/projects/${projectId}`} className="mb-6 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
         <ArrowLeft className="h-4 w-4" />
         Back to Project
       </Link>
 
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Review &amp; Verify</h1>
-          <p className="mt-1 text-sm text-gray-500">{project.name}</p>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Review &amp; Verify</h1>
+          <p className="mt-1 text-sm text-gray-500 break-words">{project.name}</p>
         </div>
         <Link
           to={`/projects/${projectId}/assign`}
-          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
         >
           Assign Developers
           <ChevronRight className="h-4 w-4" />
@@ -98,7 +98,7 @@ export default function VerifyPage() {
       </div>
 
       {/* Stats */}
-      <div className="mb-6 grid grid-cols-4 gap-3">
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           { label: 'Total', value: allItems.length, style: 'border-gray-200 bg-white text-gray-900' },
           { label: 'Approved', value: approved, style: 'border-green-200 bg-green-50 text-green-700' },
@@ -148,7 +148,7 @@ export default function VerifyPage() {
       </div>
 
       {/* Jira Sync */}
-      <div className="mt-8 rounded-xl border border-gray-200 bg-white p-6">
+      <div className="mt-8 rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
         <h2 className="mb-4 text-lg font-semibold text-gray-900">Sync to Jira</h2>
         <SyncButton
           epics={project.epics}

@@ -232,11 +232,11 @@ export default function DevelopersPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
       {/* Header */}
-      <div className="mb-6 flex items-start justify-between">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900">
+          <h1 className="flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-900">
             <Users className="h-6 w-6 text-blue-600" />
             Developers
           </h1>
@@ -244,7 +244,7 @@ export default function DevelopersPage() {
             {developers.length} developer{developers.length !== 1 ? 's' : ''} in roster
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleRefreshAll}
             disabled={refreshing || developers.length === 0}
@@ -266,7 +266,7 @@ export default function DevelopersPage() {
 
       {/* Add Developer Form */}
       {showAddForm && (
-        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50/50 p-5">
+        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50/50 p-4 sm:p-5">
           <h3 className="text-sm font-semibold text-gray-800 mb-1">Analyze & Add Developers</h3>
           <p className="text-xs text-gray-500 mb-4">
             Enter GitHub usernames to analyze commits & expertise. Add a Jira email so they can be invited to Jira and assigned issues automatically.
@@ -280,7 +280,7 @@ export default function DevelopersPage() {
 
           <div className="space-y-2">
             {newDevInputs.map((d, i) => (
-              <div key={i} className="flex items-center gap-2">
+              <div key={i} className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <input
                   type="text"
                   value={d.github}
@@ -303,13 +303,13 @@ export default function DevelopersPage() {
                   onChange={(e) => updateInput(i, 'jira', e.target.value)}
                   placeholder="Jira Display Name (optional)"
                   disabled={analyzing}
-                  className="w-44 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full sm:w-44 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
                 />
                 {newDevInputs.length > 1 && (
                   <button
                     onClick={() => removeInput(i)}
                     disabled={analyzing}
-                    className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors disabled:opacity-50"
+                    className="self-end rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors disabled:opacity-50 sm:self-auto"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -318,7 +318,7 @@ export default function DevelopersPage() {
             ))}
           </div>
 
-          <div className="mt-3 flex items-center gap-3">
+          <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
               onClick={addInput}
               disabled={analyzing || newDevInputs.length >= 10}
@@ -406,12 +406,12 @@ export default function DevelopersPage() {
                 className="overflow-hidden rounded-xl border border-gray-200 bg-white"
               >
                 {/* Developer Header */}
-                <div className="px-5 py-4">
-                  <div className="flex items-start gap-4">
+                <div className="px-4 py-4 sm:px-5">
+                  <div className="flex items-start gap-3 sm:gap-4">
                     <img
                       src={dev.avatar_url || dev.avatar || `https://github.com/${dev.username}.png`}
                       alt={dev.username}
-                      className="h-12 w-12 rounded-full ring-2 ring-gray-100"
+                      className="h-10 w-10 shrink-0 rounded-full ring-2 ring-gray-100 sm:h-12 sm:w-12"
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -435,7 +435,7 @@ export default function DevelopersPage() {
                       </div>
 
                       {/* Jira Email Input — used for invites & assignment */}
-                      <div className="mt-2 flex items-center gap-2">
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
                         <label className="text-xs font-medium text-gray-400 whitespace-nowrap flex items-center gap-1">
                           <Mail className="h-3 w-3" /> Jira Email:
                         </label>
@@ -445,7 +445,7 @@ export default function DevelopersPage() {
                           onChange={(e) => handleEmailChange(dev.username, e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && handleEmailSave(dev.username)}
                           placeholder="e.g. john@company.com"
-                          className="rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1 text-sm text-gray-700 placeholder:text-gray-300 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 w-72"
+                          className="min-w-0 flex-1 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1 text-sm text-gray-700 placeholder:text-gray-300 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 sm:w-72 sm:flex-initial"
                         />
                         {editingEmail[dev.username] !== undefined && (
                           <button
@@ -461,7 +461,7 @@ export default function DevelopersPage() {
                       </div>
 
                       {/* Jira Display Name (optional fallback) */}
-                      <div className="mt-2 flex items-center gap-2">
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
                         <label className="text-xs font-medium text-gray-400 whitespace-nowrap">Jira Display Name:</label>
                         <input
                           type="text"
@@ -469,7 +469,7 @@ export default function DevelopersPage() {
                           onChange={(e) => handleJiraChange(dev.username, e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && handleJiraSave(dev.username)}
                           placeholder="optional — used as fallback search"
-                          className="rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1 text-sm text-gray-700 placeholder:text-gray-300 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 w-72"
+                          className="min-w-0 flex-1 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1 text-sm text-gray-700 placeholder:text-gray-300 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 sm:w-72 sm:flex-initial"
                         />
                         {editingJira[dev.username] !== undefined && (
                           <button
@@ -485,9 +485,9 @@ export default function DevelopersPage() {
                       </div>
 
                       {/* Availability */}
-                      <div className="mt-2 flex items-center gap-3">
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
                         <label className="text-xs font-medium text-gray-400 whitespace-nowrap">Availability:</label>
-                        <div className="flex items-center gap-1">
+                        <div className="flex flex-wrap items-center gap-1">
                           {[
                             { value: 'available', label: 'Available', icon: Circle, color: 'text-emerald-500 bg-emerald-50 border-emerald-200' },
                             { value: 'busy', label: 'Busy', icon: Clock, color: 'text-amber-500 bg-amber-50 border-amber-200' },
@@ -508,7 +508,7 @@ export default function DevelopersPage() {
                             );
                           })}
                         </div>
-                        <div className="flex items-center gap-1.5 ml-2">
+                        <div className="flex items-center gap-1.5 sm:ml-2">
                           <label className="text-xs font-medium text-gray-400">Capacity:</label>
                           <input
                             type="range"
@@ -524,7 +524,7 @@ export default function DevelopersPage() {
                       </div>
 
                       {/* Stats Row */}
-                      <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
+                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
                         {dev.analysis?.totalCommits && (
                           <span className="flex items-center gap-1">
                             <GitBranch className="h-3 w-3" />
@@ -573,7 +573,7 @@ export default function DevelopersPage() {
 
                 {/* Expanded: Assigned Work */}
                 {isExpanded && (
-                  <div className="border-t border-gray-100 bg-gray-50 px-5 py-4">
+                  <div className="border-t border-gray-100 bg-gray-50 px-4 py-4 sm:px-5">
                     <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-400">
                       Assigned Work
                     </h4>
@@ -584,13 +584,13 @@ export default function DevelopersPage() {
                         {assignments.map((a, i) => (
                           <div
                             key={i}
-                            className="flex items-center justify-between rounded-lg bg-white border border-gray-100 px-4 py-2.5"
+                            className="flex flex-col gap-2 rounded-lg bg-white border border-gray-100 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between"
                           >
-                            <div>
+                            <div className="min-w-0">
                               <span className="text-sm font-medium text-gray-800">{a.epicTitle}</span>
                               <span className="ml-2 text-xs text-gray-400">in {a.projectName}</span>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex shrink-0 items-center gap-2">
                               {a.jiraProjectKey && (
                                 <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
                                   {a.jiraProjectKey}

@@ -56,7 +56,7 @@ export function SkeletonDevCard() {
             <div className="skeleton skeleton-badge" style={{ width: 96 }} />
           </div>
           <SkeletonLine width="70%" />
-          <div className="grid grid-cols-4 gap-4 mt-3">
+          <div className="grid grid-cols-2 gap-3 mt-3 sm:grid-cols-4 sm:gap-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="space-y-1">
                 <SkeletonLine width="60%" />

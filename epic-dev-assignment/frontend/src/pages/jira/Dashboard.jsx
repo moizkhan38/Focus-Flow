@@ -360,9 +360,9 @@ export default function Dashboard() {
     : 0;
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard</h1>
         <p className="mt-1 text-sm text-gray-500">Overview of all projects, teams, and workflow progress</p>
       </div>
 
@@ -532,7 +532,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* Workflow Progress */}
-        <div className="lg:col-span-2 rounded-xl border border-gray-200 bg-white p-5">
+        <div className="lg:col-span-2 rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
           <h2 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Activity className="h-4 w-4 text-teal-500" />
             Workflow Progress
@@ -587,7 +587,7 @@ export default function Dashboard() {
         </div>
 
         {/* Team Workload */}
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
+        <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
           <h2 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Users className="h-4 w-4 text-amber-500" />
             Team Workload
@@ -640,7 +640,7 @@ export default function Dashboard() {
       {calibration.perProject.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Accuracy Overview */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
             <h2 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <Gauge className="h-4 w-4 text-indigo-500" />
               Estimation Calibration
@@ -682,7 +682,7 @@ export default function Dashboard() {
           </div>
 
           {/* Story Point Distribution */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
             <h2 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-teal-500" />
               Story Point Distribution
@@ -735,7 +735,7 @@ export default function Dashboard() {
           {/* Charts row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Velocity per project */}
-            <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
               <h3 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
                 <TrendingUp className="h-3.5 w-3.5 text-blue-500" />
                 Velocity by Project (pts/week)
@@ -764,7 +764,7 @@ export default function Dashboard() {
             </div>
 
             {/* Estimation accuracy per project */}
-            <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
               <h3 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
                 <Gauge className="h-3.5 w-3.5 text-teal-500" />
                 Estimation Accuracy by Project (%)
@@ -794,7 +794,7 @@ export default function Dashboard() {
 
           {/* Top Contributors */}
           {completedAnalytics.topContributors.length > 0 && (
-            <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
               <h3 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
                 <Users className="h-3.5 w-3.5 text-amber-500" />
                 Top Contributors (Completed Projects)
@@ -838,7 +838,7 @@ export default function Dashboard() {
 
           {/* Retro Highlights */}
           {retroInsights && (
-            <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
               <h3 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
                 <Activity className="h-3.5 w-3.5 text-indigo-500" />
                 Retrospective Highlights
@@ -891,7 +891,7 @@ export default function Dashboard() {
 
       {/* Jira-synced projects */}
       {syncedProjects.length > 0 && (
-        <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
+        <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
           <h2 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Target className="h-4 w-4 text-emerald-500" />
             Active Jira Projects
@@ -918,7 +918,7 @@ export default function Dashboard() {
       )}
 
       {/* Recent Projects */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
+      <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
             <BarChart3 className="h-4 w-4 text-blue-500" />

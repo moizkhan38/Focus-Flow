@@ -304,14 +304,14 @@ function StoryDetail({ story, assignment }) {
   return (
     <div className="rounded-lg bg-gray-50 overflow-hidden">
       <div
-        className={`flex items-center gap-3 py-2 px-3 ${expandable ? 'cursor-pointer hover:bg-gray-100 transition-colors' : ''}`}
+        className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2 px-3 ${expandable ? 'cursor-pointer hover:bg-gray-100 transition-colors' : ''}`}
         onClick={() => expandable && setExpanded(!expanded)}
       >
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 basis-full sm:basis-0 min-w-0">
           <div className="text-xs font-medium text-gray-800">{story.title}</div>
           {story.description && <div className="text-[11px] text-gray-400 truncate mt-0.5">{story.description}</div>}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           {assignment && (
             <span className="text-[10px] font-medium text-teal-600 bg-teal-50 rounded px-1.5 py-0.5">@{assignment.assigned_developer}</span>
           )}
@@ -416,19 +416,22 @@ function EpicsStories({ project }) {
             <div key={epic.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <button
                 onClick={() => setExpandedEpic(isExpanded ? null : epic.id)}
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+                className="w-full flex items-center justify-between gap-2 px-3 py-3 sm:px-4 hover:bg-gray-50 transition-colors text-left"
               >
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  {epic.jiraKey && <span className="text-[10px] font-mono bg-blue-50 text-blue-600 rounded px-1.5 py-0.5">{epic.jiraKey}</span>}
+                <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                  {epic.jiraKey && <span className="hidden sm:inline text-[10px] font-mono bg-blue-50 text-blue-600 rounded px-1.5 py-0.5">{epic.jiraKey}</span>}
                   <span className="text-sm font-medium text-gray-900 truncate">{epic.title}</span>
-                  <span className={`text-[10px] rounded-full px-2 py-0.5 ${epic.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                  <span className={`hidden sm:inline text-[10px] rounded-full px-2 py-0.5 ${epic.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
                     {epic.status || 'pending'}
                   </span>
                 </div>
-                <div className="flex items-center gap-3 ml-3 shrink-0">
-                  <span className="text-xs text-gray-400">{storyCount} stories · {epicPoints} pts</span>
+                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                  <span className="text-[10px] sm:text-xs text-gray-400 whitespace-nowrap">
+                    <span className="hidden sm:inline">{storyCount} stories · {epicPoints} pts</span>
+                    <span className="sm:hidden">{storyCount}s · {epicPoints}p</span>
+                  </span>
                   {assignment && (
-                    <span className="text-xs text-teal-600">@{assignment.assigned_developer || assignment.developer}</span>
+                    <span className="hidden sm:inline text-xs text-teal-600">@{assignment.assigned_developer || assignment.developer}</span>
                   )}
                   <motion.div animate={{ rotate: isExpanded ? 180 : 0 }}>
                     <ChevronDown className="w-4 h-4 text-gray-400" />
@@ -648,7 +651,7 @@ function LocalProjectView({ project }) {
     <div className="space-y-6">
       {/* Next Steps Banner */}
       {nextStep && (
-        <div className="rounded-xl border border-teal-200 bg-gradient-to-r from-teal-50 to-blue-50 p-4 flex items-center justify-between">
+        <div className="rounded-xl border border-teal-200 bg-gradient-to-r from-teal-50 to-blue-50 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-teal-100 p-2">
               <ArrowRight className="w-4 h-4 text-teal-600" />
@@ -660,7 +663,7 @@ function LocalProjectView({ project }) {
           </div>
           <Link
             to={nextStep.link}
-            className="inline-flex items-center gap-2 rounded-lg bg-teal-500 px-4 py-2 text-sm font-medium text-white hover:bg-teal-600 transition-all"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-teal-500 px-4 py-2 text-sm font-medium text-white hover:bg-teal-600 transition-all"
           >
             <nextStep.icon className="h-4 w-4" /> {nextStep.action}
           </Link>
@@ -858,9 +861,9 @@ function SyncedProjectView({ project }) {
 
       {/* Velocity Banner */}
       {velocityInfo && velocityInfo.daysToFinish !== null && (
-        <div className="rounded-xl bg-gradient-to-r from-teal-50 to-blue-50 border border-teal-200 p-4 flex items-center justify-between">
+        <div className="rounded-xl bg-gradient-to-r from-teal-50 to-blue-50 border border-teal-200 p-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <Activity className="w-5 h-5 text-teal-600" />
+            <Activity className="w-5 h-5 shrink-0 text-teal-600" />
             <div>
               <span className="text-sm font-medium text-gray-900">Sprint Velocity: </span>
               <span className="text-sm text-gray-600">{velocityInfo.dailyRate} tasks/day</span>
@@ -877,7 +880,7 @@ function SyncedProjectView({ project }) {
       )}
 
       {/* Export Row */}
-      <div className="flex items-center justify-between bg-white rounded-xl border border-gray-200 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white rounded-xl border border-gray-200 p-4">
         <div>
           <h3 className="text-sm font-semibold text-gray-900">Sprint Report</h3>
           <p className="text-xs text-gray-500 mt-0.5">Download sprint stats and issue list in PDF, CSV, or JSON format.</p>
@@ -1094,9 +1097,9 @@ function SyncedProjectView({ project }) {
           )}
           <div className="space-y-2">
             {delayedTasks.map(task => (
-              <div key={task.key} className="flex items-center gap-3 rounded-lg bg-red-50 p-3">
+              <div key={task.key} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-red-50 p-3">
                 <Flame className="w-4 h-4 text-red-500 shrink-0" />
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 basis-[60%] min-w-0">
                   <div className="text-sm text-gray-900">{task.summary}</div>
                   <div className="text-xs text-gray-500 mt-0.5">{task.key} · {task.assignee?.name || 'Unassigned'} · {task.priority}</div>
                 </div>
@@ -1142,7 +1145,7 @@ function SyncedProjectView({ project }) {
       )}
 
       {/* Interactive Kanban — 2-way sync with Jira */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
         <div className="flex items-center justify-between mb-4">
           <div />
           <Link
@@ -1199,9 +1202,9 @@ function ProjectStandupReports({ projectKey }) {
   const blockerCount = standups.filter(s => s.is_blocker).length;
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+    <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 className="text-sm font-semibold text-gray-900 flex flex-wrap items-center gap-2">
           <Activity className="h-4 w-4 text-indigo-500" />
           Team Standup Reports
           {standups.length > 0 && (
@@ -1255,9 +1258,12 @@ function ProjectStandupReports({ projectKey }) {
                           {(s.user_name || s.user_id || '?')[0]?.toUpperCase()}
                         </div>
                       )}
-                      <span className="text-xs font-semibold text-gray-800">{s.user_name || s.user_id || 'Unknown'}</span>
-                      {s.is_blocker && <span className="text-[10px] font-medium text-rose-600 bg-rose-100 px-1.5 py-0.5 rounded"><Shield className="h-2.5 w-2.5 inline" /> Blocker</span>}
-                      <span className="ml-auto text-[10px] text-gray-400">{ts ? ts.toLocaleString() : ''}</span>
+                      <span className="text-xs font-semibold text-gray-800 truncate">{s.user_name || s.user_id || 'Unknown'}</span>
+                      {s.is_blocker && <span className="text-[10px] font-medium text-rose-600 bg-rose-100 px-1.5 py-0.5 rounded shrink-0"><Shield className="h-2.5 w-2.5 inline" /> Blocker</span>}
+                      <span className="ml-auto shrink-0 text-[10px] text-gray-400">
+                        <span className="hidden sm:inline">{ts ? ts.toLocaleString() : ''}</span>
+                        <span className="sm:hidden">{ts ? ts.toLocaleDateString() : ''}</span>
+                      </span>
                       <ChevronDown className={`h-3 w-3 text-gray-300 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                     </div>
                     {!isOpen && <p className="text-[11px] text-gray-500 mt-1 truncate">{s.today || s.ai_summary_today || s.yesterday || s.ai_summary_yesterday || ''}</p>}
@@ -1275,7 +1281,7 @@ function ProjectStandupReports({ projectKey }) {
                             {s.blocker_details.recommendation && <p className="text-rose-700">Recommendation: {s.blocker_details.recommendation}</p>}
                           </div>
                         )}
-                        <div className="flex gap-4 text-[10px] text-gray-400">
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-gray-400">
                           {s.finished_tickets?.length > 0 && <span>Done: {s.finished_tickets.join(', ')}</span>}
                           {s.today_tickets?.length > 0 && <span>Working on: {s.today_tickets.join(', ')}</span>}
                           <span className={sentimentColor}>Sentiment: {s.sentiment}</span>
@@ -1358,18 +1364,18 @@ function ProjectDetailPageInner() {
   })() : null;
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       {/* Back link */}
       <Link to="/projects" className="mb-6 inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 transition-colors">
         <ArrowLeft className="h-4 w-4" /> Back to Projects
       </Link>
 
       {/* Project Header */}
-      <div className="mb-8">
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
+      <div className="mb-6 sm:mb-8">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 break-words">{project.name}</h1>
               <span className={`rounded-full px-3 py-1 text-xs font-medium ${cfg.color}`}>{cfg.label}</span>
               {project.jiraProjectKey && (
                 <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-mono font-medium text-blue-600">{project.jiraProjectKey}</span>
@@ -1378,7 +1384,7 @@ function ProjectDetailPageInner() {
             {(project.rawText || project.description) && (
               <ProjectDescription text={project.rawText || project.description} project={project} />
             )}
-            <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-gray-500">
               <span>{project.epics?.length || 0} epics · {totalStories} stories · {totalPoints} points</span>
               {project.createdAt && (
                 <span className="flex items-center gap-1 text-gray-400">
@@ -1394,7 +1400,7 @@ function ProjectDetailPageInner() {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
             {!project.status || project.status === 'epics-ready' ? (
               <Link
                 to={`/projects/${projectId}/verify`}

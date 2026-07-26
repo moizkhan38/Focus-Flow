@@ -211,13 +211,13 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
-      <div className="mb-8 flex items-center justify-between">
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+      <div className="mb-6 sm:mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Projects</h1>
           <p className="mt-1 text-sm text-gray-500">Track and manage your AI-generated project workflows</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {templates.length > 0 && (
             <button
               onClick={() => setShowTemplates(!showTemplates)}

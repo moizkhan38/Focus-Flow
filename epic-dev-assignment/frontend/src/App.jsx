@@ -115,7 +115,7 @@ function WorkflowApp() {
       <div className="grid-overlay" />
       <div className="relative z-10 min-h-screen">
         <Header />
-        <main className="max-w-7xl mx-auto px-6 py-8">
+        <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 sm:py-8">
           <ProgressStepper />
           <div className="mt-10">
             <StepContent />
@@ -131,7 +131,9 @@ function SidebarLayout({ children }) {
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-950">
       <Sidebar />
-      <div className="flex-1 overflow-auto" style={{ overflowAnchor: 'none' }}>
+      {/* pt-14 clears the fixed mobile top bar; from lg up the sidebar is a
+          static column again and no offset is needed. */}
+      <div className="flex-1 overflow-auto pt-14 lg:pt-0" style={{ overflowAnchor: 'none' }}>
         {children}
       </div>
     </div>

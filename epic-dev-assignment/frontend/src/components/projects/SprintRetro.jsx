@@ -56,9 +56,9 @@ export default function SprintRetro({ projectId }) {
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors text-left"
+        className="w-full flex items-center justify-between gap-2 px-4 py-3 hover:bg-gray-50 transition-colors text-left sm:px-5"
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <MessageSquare className="w-4 h-4 text-violet-500" />
           <span className="text-sm font-semibold text-gray-900">Sprint Retrospective</span>
           {totalItems > 0 && (
@@ -78,9 +78,9 @@ export default function SprintRetro({ projectId }) {
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden"
           >
-            <div className="px-5 pb-4 border-t border-gray-100 pt-3">
+            <div className="px-4 pb-4 border-t border-gray-100 pt-3 sm:px-5">
               {/* Category tabs */}
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex flex-wrap items-center gap-2 mb-3">
                 {categories.map((cat) => (
                   <button
                     key={cat.key}
@@ -124,7 +124,7 @@ export default function SprintRetro({ projectId }) {
               ))}
 
               {/* Add item */}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   type="text"
                   value={newItem}

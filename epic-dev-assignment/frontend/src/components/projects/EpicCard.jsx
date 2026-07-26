@@ -14,8 +14,8 @@ export default function EpicCard({ epic, projectId, onApprove, onReject, onEdit,
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
       {/* Epic Header */}
-      <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-y-2 border-b border-gray-100 px-4 py-3 sm:px-5 sm:py-4">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 basis-full sm:basis-0">
           <button onClick={() => setExpanded(!expanded)} className="flex-shrink-0 text-gray-400 hover:text-gray-600">
             {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
@@ -33,7 +33,7 @@ export default function EpicCard({ epic, projectId, onApprove, onReject, onEdit,
             <p className="mt-0.5 text-sm text-gray-500 line-clamp-1">{epic.description}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+        <div className="flex items-center gap-2 flex-shrink-0 ml-auto sm:ml-3">
           {onEdit && (
             <button
               onClick={() => onEdit(epic)}
@@ -79,7 +79,7 @@ export default function EpicCard({ epic, projectId, onApprove, onReject, onEdit,
       )}
 
       {expanded && (!epic.stories || epic.stories.length === 0) && (
-        <p className="px-12 py-4 text-sm text-gray-400">No stories in this epic.</p>
+        <p className="px-6 py-4 text-sm text-gray-400 sm:px-12">No stories in this epic.</p>
       )}
     </div>
   );

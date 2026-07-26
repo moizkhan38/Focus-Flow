@@ -16,7 +16,7 @@ export default function Settings() {
   const { jira, github, isAdmin, isLoading, mutate } = useIntegrations();
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-heading flex items-center gap-2">
           <Plug className="w-6 h-6 text-blue-600" />

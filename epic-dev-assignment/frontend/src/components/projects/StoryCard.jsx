@@ -16,8 +16,8 @@ export default function StoryCard({ story, epicId, onApprove, onReject, onEdit }
 
   return (
     <div>
-      <div className="flex items-center justify-between px-5 py-3 pl-12">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-y-2 px-4 py-3 pl-6 sm:px-5 sm:pl-12">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 basis-full sm:basis-0">
           <StatusIcon status={story.status} />
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -39,7 +39,7 @@ export default function StoryCard({ story, epicId, onApprove, onReject, onEdit }
             <p className="mt-0.5 text-xs text-gray-500 line-clamp-1">{story.description}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+        <div className="flex items-center gap-2 flex-shrink-0 ml-auto sm:ml-3">
           {expandable && (
             <button
               onClick={() => setExpanded(!expanded)}
@@ -88,7 +88,7 @@ export default function StoryCard({ story, epicId, onApprove, onReject, onEdit }
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden"
           >
-            <div className="pl-12 pr-5 pb-3 space-y-3">
+            <div className="pl-6 pr-4 pb-3 space-y-3 sm:pl-12 sm:pr-5">
               {/* Acceptance Criteria */}
               {hasAC && (
                 <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 p-3">

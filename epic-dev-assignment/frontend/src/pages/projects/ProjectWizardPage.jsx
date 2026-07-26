@@ -337,14 +337,14 @@ function WizardContent() {
   };
 
   return (
-    <div className="relative min-h-screen px-6 py-8">
+    <div className="relative min-h-screen px-4 py-6 sm:px-6 sm:py-8">
       <div className="relative z-10 max-w-7xl mx-auto">
           <ProgressStepper />
 
           {/* Project Name — visible on Step 1 */}
           {currentStep === 1 && (
             <div className="mt-8 max-w-3xl mx-auto">
-              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sm:p-5">
                 <label className="block text-xs font-mono uppercase tracking-wider text-gray-400 mb-2">
                   Project Name
                 </label>
@@ -377,7 +377,7 @@ function WizardContent() {
               className="mt-10 max-w-3xl mx-auto space-y-6"
             >
               {/* Project Deadline */}
-              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sm:p-6">
                 <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4">
                   <Clock className="h-4 w-4 text-teal-500" />
                   Project Deadline
@@ -415,7 +415,7 @@ function WizardContent() {
 
               {/* Sprint Configuration */}
               {deadlineValue && (
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sm:p-6">
                   <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4">
                     <Hash className="h-4 w-4 text-teal-500" />
                     Sprint Configuration
@@ -464,7 +464,7 @@ function WizardContent() {
 
               {/* Jira Team Mapping */}
               {developers.length > 0 && (
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sm:p-6">
                   <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-1">
                     <Users className="h-4 w-4 text-teal-500" />
                     Jira Team Mapping
@@ -480,14 +480,14 @@ function WizardContent() {
                       const currentValue = jiraEmails[dev.username] ?? rosterEmail ?? dev.email ?? rosterJira ?? dev.jiraUsername ?? '';
                       const hasJira = !!(jiraEmails[dev.username] || rosterEmail || dev.email || rosterJira || dev.jiraUsername);
                       return (
-                        <div key={dev.username} className="flex items-center gap-3">
+                        <div key={dev.username} className="flex flex-wrap items-center gap-2 sm:gap-3">
                           <img
                             src={dev.avatar_url || dev.avatar || `https://github.com/${dev.username}.png`}
                             alt={dev.username}
                             className="w-8 h-8 rounded-lg ring-1 ring-gray-200 flex-shrink-0"
                           />
-                          <span className="text-sm font-medium text-gray-900 w-36 truncate flex-shrink-0">{dev.username}</span>
-                          <div className="flex-1 flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900 truncate flex-shrink-0 sm:w-36">{dev.username}</span>
+                          <div className="flex flex-1 basis-full items-center gap-2 sm:basis-0">
                             <Mail className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />
                             <input
                               type="text"
@@ -532,7 +532,7 @@ function WizardContent() {
               )}
 
               {/* Sync to Jira */}
-              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sm:p-6">
                 <h3 className="text-sm font-semibold text-gray-900 mb-4">Save & Sync to Jira</h3>
 
                 {syncStatus === 'success' ? (
