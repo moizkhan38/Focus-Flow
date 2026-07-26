@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   Plug, CheckCircle2, AlertCircle, Loader2, Trash2, ExternalLink,
   ShieldAlert, Github, Layers, MessageSquare, RefreshCw, Sparkles,
+  ChevronDown, HelpCircle,
 } from 'lucide-react';
 import { useIntegrations, useSlackStatus } from '../hooks/useIntegrations';
 import { useNotifications } from '../hooks/useNotifications';
@@ -17,6 +18,74 @@ const cardVariants = {
   hidden: { opacity: 0, y: 12 },
   show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] } },
 };
+
+// ─── Setup guide (collapsible) ───────────────────────────────────────────────
+// Each integration needs credentials fetched from a third-party console, and
+// the steps are easy to get subtly wrong (which token, which scope, which URL).
+// Collapsed by default so a connected org isn't nagged; one click when needed.
+
+/** Inline literal — a value to copy, a menu path, or a URL. */
+function Lit({ children }) {
+  return (
+    <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[11px] text-heading dark:bg-white/10">
+      {children}
+    </code>
+  );
+}
+
+function SetupGuide({ title = 'How do I get these details?', children }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="mb-4 overflow-hidden rounded-lg border border-default">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-gray-50 dark:hover:bg-white/5"
+      >
+        <HelpCircle className="h-4 w-4 shrink-0 text-blue-500" />
+        <span className="text-sm font-medium text-heading">{title}</span>
+        <ChevronDown
+          className={`ml-auto h-4 w-4 shrink-0 text-subtle transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="border-t border-default px-3 py-3">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/** Numbered steps. Each child is one <li>. */
+function Steps({ children }) {
+  return (
+    <ol className="list-decimal space-y-2 pl-5 text-xs leading-relaxed text-muted marker:text-subtle">
+      {children}
+    </ol>
+  );
+}
+
+/** Callout for the mistake people actually make with this integration. */
+function Gotcha({ children }) {
+  return (
+    <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5">
+      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+      <p className="text-[11px] leading-relaxed text-muted">{children}</p>
+    </div>
+  );
+}
 
 export default function Settings() {
   const { jira, github, gemini, isAdmin, isLoading, mutate } = useIntegrations();
@@ -256,6 +325,34 @@ function JiraCard({ status, isAdmin, isLoading, onChange }) {
         </p>
       )}
 
+      <SetupGuide>
+        <Steps>
+          <li>
+            Open your Jira site and look at the browser address bar. Your <strong>domain</strong> is
+            the whole host, e.g. <Lit>acme.atlassian.net</Lit> — no <Lit>https://</Lit> and no
+            trailing path.
+          </li>
+          <li>
+            Go to <Lit>id.atlassian.com</Lit> → <Lit>Security</Lit> →{' '}
+            <Lit>Create and manage API tokens</Lit>.
+          </li>
+          <li>
+            Click <Lit>Create API token</Lit>, give it a label such as <Lit>Focus Flow</Lit>, and
+            copy the value.
+          </li>
+          <li>
+            The <strong>email</strong> is the Atlassian account you just created the token under —
+            not a team alias.
+          </li>
+          <li>Paste all three below and press Connect Jira.</li>
+        </Steps>
+        <Gotcha>
+          The token is shown <strong>once</strong> — if you close the dialog you must create a new
+          one. Also, the account needs permission to create projects, because syncing builds the
+          Jira project, board and sprints for you.
+        </Gotcha>
+      </SetupGuide>
+
       <div className="space-y-3 mb-4">
         <Field label="Jira domain" hint="Your Atlassian site, e.g. acme.atlassian.net">
           <input
@@ -393,6 +490,30 @@ function GithubCard({ status, isAdmin, isLoading, onChange }) {
         </p>
       )}
 
+      <SetupGuide>
+        <Steps>
+          <li>
+            On GitHub, open <Lit>Settings</Lit> → <Lit>Developer settings</Lit> →{' '}
+            <Lit>Personal access tokens</Lit>.
+          </li>
+          <li>
+            Choose <Lit>Tokens (classic)</Lit> → <Lit>Generate new token</Lit>, or a fine-grained
+            token if you prefer to scope it to specific repositories.
+          </li>
+          <li>
+            Tick the <Lit>repo</Lit> scope. Fine-grained equivalent:{' '}
+            <Lit>Contents: Read-only</Lit> plus <Lit>Metadata: Read-only</Lit>.
+          </li>
+          <li>Set an expiry you're comfortable with, generate, and copy the token.</li>
+          <li>Paste it below and press Connect GitHub.</li>
+        </Steps>
+        <Gotcha>
+          This token is only used to <strong>read</strong> commit history so developer expertise and
+          experience can be measured — Focus Flow never writes to your repositories. If you only
+          analyse public repos, a token with no scopes ticked is enough.
+        </Gotcha>
+      </SetupGuide>
+
       <div className="space-y-3 mb-4">
         <Field
           label="Personal access token"
@@ -528,6 +649,29 @@ function GeminiCard({ status, isAdmin, isLoading, onChange }) {
           generation billed to your Google account or need higher quota.</>
         )}
       </p>
+
+      <SetupGuide title="How do I get a Gemini API key?">
+        <Steps>
+          <li>
+            Go to <Lit>aistudio.google.com/app/apikey</Lit> and sign in with a Google account.
+          </li>
+          <li>
+            Click <Lit>Create API key</Lit> and either pick an existing Google Cloud project or let
+            it create one.
+          </li>
+          <li>Copy the key and paste it below.</li>
+          <li>
+            Recommended: open that project in the Google Cloud console and{' '}
+            <strong>enable billing</strong>. Without it you are on the free tier.
+          </li>
+        </Steps>
+        <Gotcha>
+          You do not need this at all — generation already works using the Focus Flow platform key.
+          Connect your own only if you want usage billed to your Google account, or if you are
+          hitting quota. Newly created projects often start with a free-tier limit of{' '}
+          <Lit>0</Lit> requests per day, which returns HTTP <Lit>429</Lit> until billing is enabled.
+        </Gotcha>
+      </SetupGuide>
 
       <div className="space-y-3 mb-4">
         <Field
@@ -705,6 +849,54 @@ function SlackCard({ status, isAdmin, isLoading, onRefresh }) {
           Connected to <span className="font-medium text-heading">{status.teamName || 'your workspace'}</span>
         </p>
       )}
+
+      <SetupGuide title="How do I build the Slack bot and get these details?">
+        <p className="mb-2 text-[11px] leading-relaxed text-muted">
+          You create a Slack app in your own workspace, then paste two of its credentials here.
+          Nothing is installed on your behalf.
+        </p>
+        <Steps>
+          <li>
+            Go to <Lit>api.slack.com/apps</Lit> → <Lit>Create New App</Lit> →{' '}
+            <Lit>From scratch</Lit>. Name it (e.g. <Lit>Focus Flow</Lit>) and choose your workspace.
+          </li>
+          <li>
+            Open <Lit>OAuth &amp; Permissions</Lit> → <strong>Bot Token Scopes</strong> and add
+            exactly these four: <Lit>chat:write</Lit>, <Lit>users:read</Lit>,{' '}
+            <Lit>users:read.email</Lit>, <Lit>commands</Lit>.
+          </li>
+          <li>
+            Scroll up, click <Lit>Install to Workspace</Lit> and approve. Copy the{' '}
+            <strong>Bot User OAuth Token</strong> — it starts with <Lit>xoxb-</Lit>.
+          </li>
+          <li>
+            Open <Lit>Basic Information</Lit> → <Lit>App Credentials</Lit> and copy the{' '}
+            <strong>Signing Secret</strong>. This is what proves incoming requests really came from
+            Slack.
+          </li>
+          <li>
+            Open <Lit>Slash Commands</Lit> → <Lit>Create New Command</Lit>. Command:{' '}
+            <Lit>/standup</Lit>. Request URL:{' '}
+            <Lit>https://&lt;your-bot-url&gt;/slack/command</Lit>
+          </li>
+          <li>
+            Open <Lit>Interactivity &amp; Shortcuts</Lit>, turn it <strong>On</strong>, and set the
+            Request URL to <Lit>https://&lt;your-bot-url&gt;/slack/events</Lit>. Without this the
+            standup form cannot be submitted.
+          </li>
+          <li>Paste the bot token and signing secret below, then press Connect Slack.</li>
+          <li>
+            Test it: type <Lit>/standup</Lit> in any Slack channel. The entry appears on your
+            dashboard.
+          </li>
+        </Steps>
+        <Gotcha>
+          Slack verifies both Request URLs the moment you save them, so the standup bot service must
+          already be deployed and publicly reachable — otherwise saving fails. Note the endpoint is
+          called <Lit>/slack/events</Lit> but it handles <em>interactivity</em> (the standup form),
+          not the Events API.
+        </Gotcha>
+      </SetupGuide>
 
       <div className="space-y-3 mb-4">
         <Field
