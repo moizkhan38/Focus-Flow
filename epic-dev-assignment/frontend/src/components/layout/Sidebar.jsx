@@ -11,7 +11,7 @@ import {
   Menu,
   X,
 } from 'lucide-react';
-import LogoMark from '../shared/Logo';
+import LogoMark, { Wordmark } from '../shared/Logo';
 
 const navSections = [
   {
@@ -88,7 +88,7 @@ export default function Sidebar() {
         </button>
         <div className="flex min-w-0 items-center gap-2">
           <LogoMark className="h-7 w-7" />
-          <span className="truncate text-sm font-semibold text-gray-900 dark:text-white">Focus Flow</span>
+          <Wordmark className="truncate text-sm font-semibold" />
         </div>
       </div>
 
@@ -109,7 +109,7 @@ export default function Sidebar() {
         {/* Logo */}
         <div className="flex h-14 items-center gap-2 border-b border-gray-200 dark:border-white/10 px-4">
           <LogoMark className="h-7 w-7" />
-          <span className="text-sm font-semibold text-gray-900 dark:text-white">Focus Flow</span>
+          <Wordmark className="text-sm font-semibold" />
           <button
             type="button"
             onClick={() => setOpen(false)}

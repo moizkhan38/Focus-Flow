@@ -36,3 +36,19 @@ export default function LogoMark({ className = 'h-7 w-7', alt = '' }) {
     />
   );
 }
+
+/**
+ * "Focus Flow" in the two-tone brand colors from the logo artwork.
+ * Size and weight come from the caller; only the colors live here.
+ *
+ * The navy is nearly black-on-black in dark mode, so "Focus" flips to white
+ * there. "Flow" keeps its teal, which reads on both backgrounds.
+ */
+export function Wordmark({ className = '' }) {
+  return (
+    <span className={className}>
+      <span className="text-brand-navy dark:text-white">Focus</span>{' '}
+      <span className="text-brand-teal">Flow</span>
+    </span>
+  );
+}

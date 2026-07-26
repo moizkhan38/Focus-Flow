@@ -10,6 +10,13 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Focus Flow wordmark colors, sampled from the logo artwork
+        brand: {
+          navy: '#0F0B59',   // "Focus"
+          teal: '#01BCA9',   // "Flow"
+          slate: '#4B4F5F',  // tagline
+        },
+
         // Theme-adaptive colors via CSS variables
         accent: {
           cyan: 'var(--accent-cyan)',
