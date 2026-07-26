@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Plug, CheckCircle2, AlertCircle, Loader2, Trash2, ExternalLink,
-  ShieldAlert, Github, Layers, MessageSquare, RefreshCw,
+  ShieldAlert, Github, Layers, MessageSquare, RefreshCw, Sparkles,
 } from 'lucide-react';
 import { useIntegrations, useSlackStatus } from '../hooks/useIntegrations';
 import { useNotifications } from '../hooks/useNotifications';
@@ -19,7 +19,7 @@ const cardVariants = {
 };
 
 export default function Settings() {
-  const { jira, github, isAdmin, isLoading, mutate } = useIntegrations();
+  const { jira, github, gemini, isAdmin, isLoading, mutate } = useIntegrations();
   const { slack, isLoading: slackLoading, mutate: refreshSlack } = useSlackStatus();
 
   return (
@@ -63,6 +63,9 @@ export default function Settings() {
         </motion.div>
         <motion.div variants={cardVariants}>
           <SlackCard status={slack} isAdmin={isAdmin} isLoading={slackLoading} onRefresh={refreshSlack} />
+        </motion.div>
+        <motion.div variants={cardVariants}>
+          <GeminiCard status={gemini} isAdmin={isAdmin} isLoading={isLoading} onChange={mutate} />
         </motion.div>
       </motion.div>
     </div>
@@ -439,6 +442,156 @@ function GithubCard({ status, isAdmin, isLoading, onChange }) {
 // install has to prove which org it belongs to. That is Phase 4; today the bot
 // is bound to one workspace and one org through its own env (decision D6).
 // Rather than render a form that cannot work, this card reports actual state.
+
+// ─── Gemini (optional per-org key) ───────────────────────────────────────────
+//
+// Unlike Jira/GitHub/Slack this integration is OPTIONAL. Per decision D5 the
+// Gemini key is platform-owned — AI generation is the product — so an org that
+// connects nothing still generates epics using the platform key. Connecting a
+// key here only overrides that for this organization, which is useful when the
+// shared key hits its free-tier quota.
+
+function GeminiCard({ status, isAdmin, isLoading, onChange }) {
+  const { notify } = useNotifications();
+  const [apiKey, setApiKey] = useState('');
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState('');
+
+  const connected = status?.connected;
+
+  const handleConnect = async () => {
+    setError('');
+    setBusy('connect');
+    try {
+      await apiJson('/api/integrations/gemini', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: apiKey.trim() }),
+      });
+      setApiKey('');
+      await onChange();
+      notify.success('Gemini key saved', 'This organization now generates using its own key.');
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleTest = async () => {
+    setError('');
+    setBusy('test');
+    try {
+      const r = await apiJson('/api/integrations/gemini/test', { method: 'POST' });
+      if (r.ok) notify.success('Gemini key OK', 'Google accepted the stored key.');
+      else setError(r.error || 'Google rejected the stored key.');
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!window.confirm('Remove this key? Generation continues using the Focus Flow platform key.')) return;
+    setError('');
+    setBusy('disconnect');
+    try {
+      await apiJson('/api/integrations/gemini', { method: 'DELETE' });
+      await onChange();
+      notify.success('Gemini key removed', 'Back to the platform key.');
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <IntegrationCard
+      icon={Sparkles}
+      title="Gemini AI"
+      subtitle="Powers epic, story and test-case generation."
+      status={{ connected }}
+      isLoading={isLoading}
+    >
+      <p className="mb-4 text-sm text-muted">
+        {connected ? (
+          <>
+            Using this organization's own key
+            {status.keySuffix && (
+              <> · ending <span className="font-mono text-heading">…{status.keySuffix}</span></>
+            )}
+          </>
+        ) : (
+          <>Using the Focus Flow platform key. Optional — connect your own only if you want
+          generation billed to your Google account or need higher quota.</>
+        )}
+      </p>
+
+      <div className="space-y-3 mb-4">
+        <Field
+          label="Google AI Studio API key"
+          hint={connected ? 'Stored securely — enter a new key only to replace it.' : 'Optional. Create one at aistudio.google.com → Get API key.'}
+        >
+          <input
+            className={inputCls}
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={connected ? '••••••••••••' : 'Paste your Gemini API key'}
+            disabled={!isAdmin || !!busy}
+            autoComplete="off"
+          />
+        </Field>
+
+        <a
+          href="https://aistudio.google.com/app/apikey"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+        >
+          Get a Gemini API key <ExternalLink className="w-3 h-3" />
+        </a>
+      </div>
+
+      <div className="space-y-3">
+        <CardError message={error} />
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleConnect}
+            disabled={!isAdmin || !!busy || !apiKey.trim()}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {busy === 'connect' && <Loader2 className="w-4 h-4 animate-spin" />}
+            {connected ? 'Update key' : 'Use my own key'}
+          </button>
+
+          {connected && (
+            <>
+              <button
+                onClick={handleTest}
+                disabled={!isAdmin || !!busy}
+                className="inline-flex items-center gap-2 rounded-lg border border-default px-3.5 py-2 text-sm font-medium text-heading hover:bg-gray-50 disabled:opacity-50"
+              >
+                {busy === 'test' && <Loader2 className="w-4 h-4 animate-spin" />}
+                Test key
+              </button>
+              <button
+                onClick={handleDisconnect}
+                disabled={!isAdmin || !!busy}
+                className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 px-3.5 py-2 text-sm font-medium text-red-600 hover:bg-red-500/10 disabled:opacity-50"
+              >
+                {busy === 'disconnect' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Use platform key
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </IntegrationCard>
+  );
+}
 
 function SlackCard({ status, isAdmin, isLoading, onRefresh }) {
   const { notify } = useNotifications();

@@ -19,11 +19,17 @@ export function useIntegrations() {
     { revalidateOnFocus: false, dedupingInterval: 30000 }
   );
 
-  const status = data || { jira: { connected: false }, github: { connected: false } };
+  const status = data || {
+    jira: { connected: false },
+    github: { connected: false },
+    gemini: { connected: false },
+  };
 
   return {
     jira: status.jira,
     github: status.github,
+    // connected:false means "using the platform key", not an error (D5).
+    gemini: status.gemini || { connected: false },
     // Only org admins may change integrations (backend enforces; this drives the UI).
     isAdmin: membership?.role === 'org:admin',
     error,

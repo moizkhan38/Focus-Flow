@@ -10,6 +10,7 @@ import {
   getJiraCredentials,
   getGithubToken,
   getSlackCredentials,
+  getGeminiKey,
 } from '../services/credentialProvider.js';
 
 // Per-org integration credentials API (Phase 2, step 2.4).
@@ -61,6 +62,31 @@ async function testJira({ domain, email, apiToken }) {
     return { ok: false, error: 'Jira rejected these credentials (check email + API token).' };
   }
   return { ok: false, error: parseJiraError(body, res.status) };
+}
+
+// Listing models is the cheapest authenticated call that proves a Gemini key
+// works. A key that is syntactically valid but has no quota still lists models,
+// so this validates authentication, not entitlement.
+async function testGemini({ apiKey }) {
+  let res;
+  try {
+    res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`
+    );
+  } catch {
+    return { ok: false, error: 'Could not reach generativelanguage.googleapis.com' };
+  }
+  if (res.ok) {
+    const body = await res.json().catch(() => ({}));
+    return { ok: true, modelCount: (body.models || []).length };
+  }
+  if (res.status === 400 || res.status === 403) {
+    return { ok: false, error: 'Google rejected this API key. Check it was copied in full from AI Studio.' };
+  }
+  if (res.status === 429) {
+    return { ok: false, error: 'The key is valid but is currently rate-limited (429).' };
+  }
+  return { ok: false, error: `Google responded ${res.status}` };
 }
 
 // auth.test needs no scope and returns the workspace name — ideal for validating
@@ -310,11 +336,30 @@ router.put('/integrations/github', requireOrgAdmin, async (req, res) => {
   }
 });
 
+// PUT /api/integrations/gemini — store an OPTIONAL per-org Gemini key (admin only).
+// D5 keeps the platform key as the default; this only overrides it for this org.
+router.put('/integrations/gemini', requireOrgAdmin, async (req, res) => {
+  try {
+    const apiKey = String(req.body?.apiKey || '').trim();
+    if (!apiKey) {
+      return res.status(400).json({ success: false, error: 'An API key is required' });
+    }
+
+    const test = await testGemini({ apiKey });
+    if (!test.ok) return res.status(400).json({ success: false, error: test.error });
+
+    await setIntegration(req.orgId, 'gemini', { apiKey });
+    return res.json({ success: true, modelCount: test.modelCount });
+  } catch (err) {
+    return sendServerError(res, err);
+  }
+});
+
 // DELETE /api/integrations/:provider — disconnect (admin only).
 router.delete('/integrations/:provider', requireOrgAdmin, async (req, res) => {
   try {
     const { provider } = req.params;
-    if (!['jira', 'github', 'slack'].includes(provider)) {
+    if (!['jira', 'github', 'slack', 'gemini'].includes(provider)) {
       return res.status(400).json({ success: false, error: 'Unknown provider' });
     }
     await deleteIntegration(req.orgId, provider);
@@ -349,6 +394,12 @@ router.post('/integrations/:provider/test', requireOrgAdmin, async (req, res) =>
         ok: test.ok,
         ...(test.ok ? { teamName: test.teamName } : { error: test.error }),
       });
+    }
+    if (provider === 'gemini') {
+      const apiKey = await getGeminiKey(req.orgId);
+      if (!apiKey) return res.status(400).json({ success: false, error: 'GEMINI_NOT_CONNECTED' });
+      const test = await testGemini({ apiKey });
+      return res.json({ success: true, ok: test.ok, ...(test.ok ? {} : { error: test.error }) });
     }
     return res.status(400).json({ success: false, error: 'Unknown provider' });
   } catch (err) {

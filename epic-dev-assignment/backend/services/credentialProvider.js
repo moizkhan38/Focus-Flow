@@ -56,6 +56,14 @@ export async function getGithubToken(orgId) {
   return p ? p.token || null : null;
 }
 
+// OPTIONAL per-org Gemini key (D5: the platform key remains the default).
+// Returns null when the org hasn't connected one, which the caller treats as
+// "use the platform key" rather than as an error.
+export async function getGeminiKey(orgId) {
+  const p = await getPayload(orgId, 'gemini');
+  return p ? p.apiKey || null : null;
+}
+
 // Slack credentials for the standup bot. Unlike Jira/GitHub these are consumed
 // by a separate Python service, so they leave this process over the
 // internal-key-gated /api/internal/slack-config lane rather than through a
@@ -100,10 +108,11 @@ export async function deleteIntegration(orgId, provider) {
 // Non-secret connection status for the Settings UI. Domain/email/login are safe
 // to surface; the token is reduced to its last 4 characters.
 export async function getStatus(orgId) {
-  const [jira, github, slack] = await Promise.all([
+  const [jira, github, slack, gemini] = await Promise.all([
     getPayload(orgId, 'jira'),
     getPayload(orgId, 'github'),
     getPayload(orgId, 'slack'),
+    getPayload(orgId, 'gemini'),
   ]);
   return {
     jira: jira
@@ -119,6 +128,10 @@ export async function getStatus(orgId) {
           analyzerUrl: slack.analyzerUrl || null,
           tokenSuffix: (slack.botToken || '').slice(-4),
         }
+      : { connected: false },
+    // `connected: false` here means "using the platform key", not an error.
+    gemini: gemini
+      ? { connected: true, keySuffix: (gemini.apiKey || '').slice(-4) }
       : { connected: false },
   };
 }

@@ -1,6 +1,7 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { generateEpics, regenerateComponent } from '../services/flaskProxy.js';
+import { getGeminiKey } from '../services/credentialProvider.js';
 import { classifyEpics } from '../services/epicClassifier.js';
 import { sendServerError } from '../utils/httpError.js';
 
@@ -94,8 +95,9 @@ router.post('/generate', aiLimiter, async (req, res) => {
       return res.status(400).json({ success: false, error: lengthError });
     }
 
-    // Proxy request to Flask service
-    const result = await generateEpics(description);
+    // Optional per-org key; null means Flask falls back to the platform key (D5).
+    const geminiKey = await getGeminiKey(req.orgId);
+    const result = await generateEpics(description, geminiKey);
 
     res.json(result);
   } catch (error) {
@@ -121,7 +123,8 @@ router.post('/regenerate', aiLimiter, async (req, res) => {
       return res.status(400).json({ success: false, error: lengthError });
     }
 
-    const result = await regenerateComponent(type, project_description, context || {});
+    const geminiKey = await getGeminiKey(req.orgId);
+    const result = await regenerateComponent(type, project_description, context || {}, geminiKey);
 
     res.json(result);
   } catch (error) {

@@ -6,17 +6,24 @@ const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
 // Attach the shared internal-service key so Flask (when gated in production)
 // accepts calls from this gateway. No-op locally when the key is unset.
-function flaskHeaders() {
+//
+// geminiKey is the caller's OPTIONAL per-org override (D5 keeps the platform
+// key as the default). When omitted, Flask uses its own GEMINI_API_KEY, so
+// existing behaviour is unchanged. It travels as a header rather than in the
+// body to keep the JSON contract identical for both paths — and this hop is
+// internal-only and already gated by INTERNAL_API_KEY.
+function flaskHeaders(geminiKey) {
   const headers = { 'Content-Type': 'application/json' };
   if (INTERNAL_API_KEY) headers['X-Internal-Key'] = INTERNAL_API_KEY;
+  if (geminiKey) headers['X-Gemini-Key'] = geminiKey;
   return headers;
 }
 
-export async function generateEpics(description) {
+export async function generateEpics(description, geminiKey = null) {
   try {
     const response = await fetch(`${FLASK_URL}/api/generate`, {
       method: 'POST',
-      headers: flaskHeaders(),
+      headers: flaskHeaders(geminiKey),
       body: JSON.stringify({ description }),
       signal: AbortSignal.timeout(FETCH_TIMEOUT)
     });
@@ -33,11 +40,11 @@ export async function generateEpics(description) {
   }
 }
 
-export async function regenerateComponent(type, projectDescription, context) {
+export async function regenerateComponent(type, projectDescription, context, geminiKey = null) {
   try {
     const response = await fetch(`${FLASK_URL}/api/regenerate`, {
       method: 'POST',
-      headers: flaskHeaders(),
+      headers: flaskHeaders(geminiKey),
       body: JSON.stringify({
         type,
         project_description: projectDescription,

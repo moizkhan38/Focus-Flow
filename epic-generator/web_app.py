@@ -143,6 +143,44 @@ print("\n" + "="*80)
 print("GENERATOR STATUS:")
 print(f"  Gemini API:  {'[READY]' if gemini_generator else '[UNAVAILABLE]'}")
 print("="*80)
+
+
+# ─── Per-organization key override (D5) ──────────────────────────────────────
+# The platform key above stays the default. When an organization has connected
+# its own Gemini key in the Integrations page, the backend forwards it as
+# X-Gemini-Key and that key is used for this request only. Generators are cached
+# per key so a repeat caller does not pay client construction on every request.
+_generator_cache = {}
+_GENERATOR_CACHE_MAX = 32
+
+
+def generator_for_request():
+    """Generator for the caller's key, falling back to the platform generator.
+
+    Never logs key material. Returns None only if neither a per-request key nor
+    the platform generator is usable, which the routes report as unavailable.
+    """
+    key = request.headers.get("X-Gemini-Key", "").strip()
+    if not key:
+        return gemini_generator
+
+    cached = _generator_cache.get(key)
+    if cached is not None:
+        return cached
+
+    try:
+        gen = GeminiEpicGenerator(api_key=key)
+    except Exception as e:
+        # Fall back rather than fail: a bad org key should degrade to the
+        # platform key, not break generation outright.
+        log.warning(f"Per-org Gemini key rejected ({type(e).__name__}); using platform key")
+        return gemini_generator
+
+    # Bounded cache — evict oldest insertion when full.
+    if len(_generator_cache) >= _GENERATOR_CACHE_MAX:
+        _generator_cache.pop(next(iter(_generator_cache)), None)
+    _generator_cache[key] = gen
+    return gen
 print("\nWeb server starting...")
 
 
@@ -295,7 +333,8 @@ def generate():
         if length_error:
             return jsonify({'success': False, 'error': length_error}), 400
 
-        if not gemini_generator:
+        gen = generator_for_request()
+        if not gen:
             return jsonify({
                 'success': False,
                 'error': 'Gemini API not available'
@@ -304,7 +343,7 @@ def generate():
         print(f"\n[API] Using Gemini API for generation...")
         sys.stdout.flush()
 
-        gen_result = gemini_generator.generate_quick_summary(description)
+        gen_result = gen.generate_quick_summary(description)
 
         if not gen_result.get("success"):
             print(f"[API] [ERROR] Gemini API generation failed: {gen_result.get('error')}")
@@ -411,7 +450,8 @@ def regenerate():
         if length_error:
             return jsonify({'success': False, 'error': length_error}), 400
 
-        if not gemini_generator:
+        gen = generator_for_request()
+        if not gen:
             return jsonify({
                 'success': False,
                 'error': 'Gemini API not available'
@@ -428,8 +468,8 @@ def regenerate():
         print(f"{'='*60}")
         sys.stdout.flush()
 
-        response = gemini_generator.client.models.generate_content(
-            model=gemini_generator.model_name,
+        response = gen.client.models.generate_content(
+            model=gen.model_name,
             contents=prompt
         )
         raw_text = response.text
@@ -832,7 +872,8 @@ def classify_epic():
                 'error': 'Please provide epic_title or epic_description'
             }), 400
 
-        if not gemini_generator:
+        gen = generator_for_request()
+        if not gen:
             return jsonify({
                 'success': False,
                 'error': 'Gemini API not available'
@@ -856,8 +897,8 @@ Return ONLY the category name, nothing else."""
 
         try:
             # Use the gemini generator's internal method
-            response = gemini_generator.client.models.generate_content(
-                model=gemini_generator.model_name,
+            response = gen.client.models.generate_content(
+                model=gen.model_name,
                 contents=classification_prompt
             )
             category = response.text.strip()
