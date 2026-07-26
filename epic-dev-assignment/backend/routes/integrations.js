@@ -204,33 +204,6 @@ router.put('/integrations/slack', requireOrgAdmin, async (req, res) => {
   }
 });
 
-// GET /api/internal/slack-config — the bot fetching its own credentials.
-// Internal key only (see the gate in server.js); a Clerk session cannot reach it.
-//
-// TRADE-OFF, made deliberately: this hands decrypted secrets to the Python bot
-// over HTTP, because credentialProvider is Node and the bot is Python. It is
-// mitigated by the internal-key gate and by the bot never being exposed publicly
-// (no published port in docker-compose; backend and bot share an internal
-// network). The alternative — a second copy of the crypto in Python — means two
-// implementations of the envelope and two places holding the master key.
-router.get('/internal/slack-config', async (req, res) => {
-  try {
-    if (!req.orgId) {
-      return res.status(400).json({ success: false, error: 'X-Org-Id header is required' });
-    }
-    const creds = await getSlackCredentials(req.orgId);
-    if (!creds) return res.status(404).json({ success: false, error: 'SLACK_NOT_CONNECTED' });
-    return res.json({
-      success: true,
-      botToken: creds.botToken,
-      signingSecret: creds.signingSecret,
-      analyzerUrl: creds.analyzerUrl,
-      teamName: creds.teamName,
-    });
-  } catch (err) {
-    return sendServerError(res, err);
-  }
-});
 
 // GET /api/integrations/slack — standup bot status for this org (any member).
 router.get('/integrations/slack', async (req, res) => {

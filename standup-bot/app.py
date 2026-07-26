@@ -180,12 +180,79 @@ def get_signature_verifier():
 # Initialize Clients
 gemini_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-flash-lite-latest')  # lite alias: free-tier quota + never 404-deprecates
-jira = Jira(
-    url=os.environ.get("JIRA_URL"),
-    username=os.environ.get("JIRA_EMAIL"),
-    password=os.environ.get("JIRA_API_TOKEN"),
-    cloud=True,
-)
+# ─── Jira credential resolution ──────────────────────────────────────────────
+# The organization's Jira credentials — the same ones connected in the app's
+# Integrations page — take precedence over this process's env vars.
+#
+# This matters for correctness, not just tidiness: the app creates Jira projects
+# using the ORG's credentials, so if the bot carried its own copy pointing at a
+# different Atlassian site, newly created projects would never appear in the
+# /standup project picker. Resolving from one source keeps them in step, and
+# removes the last plaintext Jira token from disk.
+#
+# Deliberately does NOT read the Flask request context: the scheduler jobs
+# (reminders, stale-ticket scans) call Jira outside any request.
+
+JIRA_CFG_TTL_SECONDS = 300
+_jira_cfg_cache = {"data": None, "fetched_at": 0}
+_jira_client_cache = {"sig": None, "client": None}
+
+
+def _jira_config(force=False):
+    """Org-stored Jira credentials if available, else this process's env."""
+    import time
+    now = time.time()
+    cached = _jira_cfg_cache["data"]
+    if not force and cached and now - _jira_cfg_cache["fetched_at"] < JIRA_CFG_TTL_SECONDS:
+        return cached
+
+    cfg = {
+        "url": (os.environ.get("JIRA_URL") or "").strip(),
+        "email": (os.environ.get("JIRA_EMAIL") or "").strip(),
+        "token": (os.environ.get("JIRA_API_TOKEN") or "").strip(),
+        "source": "env",
+    }
+
+    base = _express_base()
+    if base and STANDUP_ORG_ID:
+        try:
+            r = requests.get(
+                f"{base}/api/internal/jira-config", timeout=5, headers=_express_headers()
+            )
+            if r.ok:
+                d = r.json()
+                # Take over only when the record is complete; a half-filled one
+                # must not leave the client half-configured.
+                if d.get("domain") and d.get("email") and d.get("apiToken"):
+                    domain = str(d["domain"]).strip().rstrip("/")
+                    if not domain.startswith("http"):
+                        domain = f"https://{domain}"
+                    cfg = {
+                        "url": domain,
+                        "email": d["email"],
+                        "token": d["apiToken"],
+                        "source": "integrations",
+                    }
+            elif r.status_code != 404:  # 404 = org hasn't connected Jira yet
+                log.warning(f"jira-config returned {r.status_code}; using env")
+        except Exception as e:
+            log.warning(f"jira-config fetch failed, using env: {e}")
+
+    _jira_cfg_cache["data"] = cfg
+    _jira_cfg_cache["fetched_at"] = now
+    return cfg
+
+
+def get_jira_client():
+    """Jira client for the currently-resolved credentials, rebuilt when they change."""
+    cfg = _jira_config()
+    sig = (cfg["url"], cfg["email"], cfg["token"])
+    if _jira_client_cache["client"] is None or _jira_client_cache["sig"] != sig:
+        _jira_client_cache["sig"] = sig
+        _jira_client_cache["client"] = Jira(
+            url=cfg["url"], username=cfg["email"], password=cfg["token"], cloud=True
+        )
+    return _jira_client_cache["client"]
 
 # Bounded pool for background standup processing — prevents unbounded thread
 # creation under rapid /standup submissions.
@@ -212,7 +279,7 @@ def refresh_jira_projects_cache():
     """Fetch Jira projects and update the cache. Safe to call from a background thread."""
     import time
     try:
-        projects = jira.get("rest/api/3/project")
+        projects = get_jira_client().get("rest/api/3/project")
         options = [
             {
                 "text": {"type": "plain_text", "text": f"{p['name']} ({p['key']})"},
@@ -261,7 +328,7 @@ def get_cached_project_options():
 def verify_ticket_exists(ticket_id):
     """Check if a Jira ticket exists and user has access to it."""
     try:
-        jira.issue(ticket_id)
+        get_jira_client().issue(ticket_id)
         return True
     except Exception:
         return False
@@ -270,7 +337,7 @@ def verify_ticket_exists(ticket_id):
 def get_ticket_assignee(ticket_id):
     """Get the assignee info of a Jira ticket. Returns (account_id, name)."""
     try:
-        issue = jira.issue(ticket_id)
+        issue = get_jira_client().issue(ticket_id)
         assignee = issue["fields"].get("assignee")
         if assignee:
             return (
@@ -285,7 +352,7 @@ def get_ticket_assignee(ticket_id):
 def get_jira_account_id(email):
     """Get the Jira account ID for an email address."""
     try:
-        users = jira.user_find_by_user_string(query=email)
+        users = get_jira_client().user_find_by_user_string(query=email)
         if users:
             return users[0].get("accountId")
         return None
@@ -319,7 +386,7 @@ def move_jira_ticket(ticket_id, status_name, user_account_id=None):
                     "so you cannot move it. Please update the ticket or contact the assignee."
                 )
 
-        jira.issue_transition(ticket_id, status_name)
+        get_jira_client().issue_transition(ticket_id, status_name)
         return f"[SUCCESS] Moved {ticket_id} to {status_name}"
     except Exception as e:
         return f"[ERROR] Could not move {ticket_id}: {str(e)}"
@@ -337,7 +404,7 @@ def create_blocker_ticket(summary, description, project_key=None):
             "issuetype": {"name": "Task"},
             "priority": {"name": "High"},
         }
-        new_issue = jira.create_issue(fields=issue_dict)
+        new_issue = get_jira_client().create_issue(fields=issue_dict)
         return f"[BLOCKER] Created Blocker Ticket: {new_issue['key']}"
     except Exception as e:
         return f"[ERROR] Failed to create blocker: {e}"
@@ -833,6 +900,7 @@ def api_standup_status():
     # force=True so the UI reflects a just-saved credential immediately rather
     # than up to SLACK_CFG_TTL_SECONDS later.
     cfg = _slack_config(force=True)
+    jira_cfg = _jira_config(force=True)
     slack_configured = bool(cfg.get("botToken"))
     return jsonify({
         'success': True,
@@ -842,12 +910,17 @@ def api_standup_status():
         'jiraProjectKey': os.environ.get("JIRA_PROJECT_KEY") or None,
         # 'integrations' = pasted in the UI, 'env' = this process's .env
         'credentialSource': cfg.get("source"),
+        # Which Atlassian site the bot lists projects from. If this disagrees
+        # with the org's connected Jira, app-created projects never show up in
+        # the /standup picker — so surface it rather than leaving it implicit.
+        'jiraSource': jira_cfg.get("source"),
+        'jiraSite': jira_cfg.get("url") or None,
         'configured': {
             'slack': slack_configured,
             'signingSecret': bool(cfg.get("signingSecret")),
             'analyzer': bool(cfg.get("analyzerUrl")),
             'gemini': bool(os.environ.get("GEMINI_API_KEY")),
-            'jira': bool(os.environ.get("JIRA_URL") and os.environ.get("JIRA_API_TOKEN")),
+            'jira': bool(jira_cfg.get("url") and jira_cfg.get("token")),
             'orgBinding': bool(STANDUP_ORG_ID),
         },
     }), 200
@@ -917,7 +990,7 @@ def check_for_proactive_blockers():
 
     # Fetch all projects dynamically
     try:
-        projects = jira.get("rest/api/3/project")
+        projects = get_jira_client().get("rest/api/3/project")
         project_keys = [p["key"] for p in projects]
     except Exception:
         project_keys = [os.environ.get("JIRA_PROJECT_KEY", "SCRUM")]
@@ -952,7 +1025,7 @@ def check_for_proactive_blockers():
 
         for check in checks:
             try:
-                issues = jira.jql(check["jql"])["issues"]
+                issues = get_jira_client().jql(check["jql"])["issues"]
                 print(f"[SCAN] {project_key}: Found {len(issues)} issues for JQL: {check['jql']}")
 
                 for issue in issues:
@@ -1067,7 +1140,7 @@ def _get_user_projects_map(members):
                 f'project = "{key}" AND statusCategory != Done '
                 f'AND assignee IS NOT EMPTY'
             )
-            result = jira.jql(jql, fields="assignee", limit=1000)
+            result = get_jira_client().jql(jql, fields="assignee", limit=1000)
             for issue in result.get("issues", []):
                 assignee = issue.get("fields", {}).get("assignee") or {}
                 email = (assignee.get("emailAddress") or "").lower()

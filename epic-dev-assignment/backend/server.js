@@ -9,6 +9,7 @@ import { verifyToken } from '@clerk/backend';
 import { Server as SocketIOServer } from 'socket.io';
 import { requireOrg, orgOrInternal, requireInternal } from './middleware/auth.js';
 import { refreshAllDevelopers } from './services/developerRefresher.js';
+import internalRouter from './routes/internal.js';
 import epicsRouter from './routes/epics.js';
 import developersRouter from './routes/developers.js';
 import assignmentRouter from './routes/assignment.js';
@@ -110,11 +111,20 @@ app.use('/api', (req, res, next) => {
   if (req.path === '/db/standups') return orgOrInternal(req, res, next);  // bot's internal lane
   // Hands decrypted Slack credentials to the bot — internal key ONLY, never a
   // Clerk session (requireInternal has no user fallback).
-  if (req.path === '/internal/slack-config') return requireInternal(req, res, next);
+  if (req.path === '/internal/slack-config' || req.path === '/internal/jira-config') {
+    return requireInternal(req, res, next);
+  }
   return requireOrg(req, res, next);
 });
 
 // Routes — auth enforced by the gate above.
+//
+// internalRouter MUST stay first. Every router below is also mounted at '/api',
+// and dbRouter applies a blanket router.use(requireOrg); a request that reaches
+// it without a Clerk session is rejected there, before any later router sees
+// it. Mounting the bot's internal lane ahead of them is what keeps that from
+// happening — moving it down breaks the bot with a 401 that reads like a bad key.
+app.use('/api', internalRouter);
 app.use('/api', epicsRouter);
 app.use('/api', developersRouter);
 app.use('/api', assignmentRouter);

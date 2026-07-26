@@ -49,7 +49,11 @@ export function orgOrInternal(req, res, next) {
 // config). A signed-in user, org admin or not, must never reach these.
 export function requireInternal(req, res, next) {
   if (!validInternalKey(req)) {
-    return res.status(401).json({ success: false, error: 'UNAUTHENTICATED' });
+    // Distinct from requireOrg's UNAUTHENTICATED on purpose: an identical body
+    // for both makes it impossible to tell whether a caller failed the internal
+    // key check or simply had no Clerk session, which is exactly the ambiguity
+    // that made the earlier INTERNAL_API_KEY mismatch so slow to diagnose.
+    return res.status(401).json({ success: false, error: 'INTERNAL_AUTH_REQUIRED' });
   }
   req.internal = true;
   req.orgId = req.get('X-Org-Id') || null;
