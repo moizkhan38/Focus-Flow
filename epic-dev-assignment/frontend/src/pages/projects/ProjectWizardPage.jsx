@@ -82,13 +82,14 @@ function transformAssignmentsForProject(assignments) {
 }
 
 function WizardContent() {
-  const { currentStep, generatedEpics, developers, assignments, projectDescription, reset } = useWorkflow();
+  // projectName comes from the workflow state (set in Step 1) so it survives a
+  // refresh with the rest of the draft and is visible to the step that requires it.
+  const { currentStep, generatedEpics, developers, assignments, projectDescription, projectName, setProjectName, reset } = useWorkflow();
   const { addProject } = useProjects();
   const { addDevelopers, developers: rosterDevs, updateEmail: updateRosterEmail } = useDevelopers();
   const { notify } = useNotifications();
   const navigate = useNavigate();
 
-  const [projectName, setProjectName] = useState('');
   const [deadlineValue, setDeadlineValue] = useState('');
   const [deadlineUnit, setDeadlineUnit] = useState('weeks');
   const [syncStatus, setSyncStatus] = useState('idle');
@@ -182,7 +183,14 @@ function WizardContent() {
   })();
 
   const handleSaveAndSync = async () => {
-    const name = projectName.trim() || 'Untitled Project';
+    // Step 1 already blocks generation without a name; this is the backstop for a
+    // restored draft or a cleared field. Inventing "Untitled Project" here would
+    // quietly undo the requirement — and that name would end up in Jira.
+    const name = (projectName || '').trim();
+    if (!name) {
+      setSyncError('This project needs a name before it can be saved or synced. Go back to Step 1 and add one.');
+      return;
+    }
     const epics = transformEpicsForProject(generatedEpics);
     const flatAssignments = transformAssignmentsForProject(assignments);
 
@@ -300,8 +308,12 @@ function WizardContent() {
   };
 
   const handleSaveOnly = () => {
+    const name = (projectName || '').trim();
+    if (!name) {
+      setSyncError('This project needs a name before it can be saved. Go back to Step 1 and add one.');
+      return;
+    }
     setSaving(true);
-    const name = projectName.trim() || 'Untitled Project';
     const epics = transformEpicsForProject(generatedEpics);
     const flatAssignments = transformAssignmentsForProject(assignments);
 
@@ -341,24 +353,8 @@ function WizardContent() {
       <div className="relative z-10 max-w-7xl mx-auto">
           <ProgressStepper />
 
-          {/* Project Name — visible on Step 1 */}
-          {currentStep === 1 && (
-            <div className="mt-8 max-w-3xl mx-auto">
-              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sm:p-5">
-                <label className="block text-xs font-mono uppercase tracking-wider text-gray-400 mb-2">
-                  Project Name
-                </label>
-                <input
-                  type="text"
-                  value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
-                  placeholder="Enter project name..."
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 text-gray-900 placeholder-gray-400 px-4 py-2.5 text-sm
-                             focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
-                />
-              </div>
-            </div>
-          )}
+          {/* The project name input lives in Step 1 itself, next to the button
+              that requires it — one field, validated where it is used. */}
 
           <div className="mt-6">
             <AnimatePresence mode="wait">

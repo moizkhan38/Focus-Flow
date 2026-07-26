@@ -53,6 +53,9 @@ export function WorkflowProvider({ children }) {
 
   const initialState = loadState() || {
     currentStep: 1,
+    // Lives here rather than in the wizard page's local state so Step 1 can
+    // require it before spending an AI call on an unnamed project.
+    projectName: '',
     projectDescription: '',
     generatedEpics: [],
     approvedEpics: [],
@@ -95,6 +98,10 @@ export function WorkflowProvider({ children }) {
     },
 
     // Step 1: Epic Generation
+    setProjectName: (name) => {
+      setState(prev => ({ ...prev, projectName: name }));
+    },
+
     setProjectDescription: (description) => {
       setState(prev => ({ ...prev, projectDescription: description }));
     },
@@ -527,6 +534,7 @@ export function WorkflowProvider({ children }) {
       localStorage.removeItem('epic-workflow-state');
       setState({
         currentStep: 1,
+        projectName: '',
         projectDescription: '',
         generatedEpics: [],
         approvedEpics: [],

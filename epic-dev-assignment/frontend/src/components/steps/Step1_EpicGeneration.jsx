@@ -30,6 +30,8 @@ const itemVariants = {
 
 export default function Step1_EpicGeneration() {
   const {
+    projectName,
+    setProjectName,
     projectDescription,
     setProjectDescription,
     setGeneratedEpics,
@@ -39,7 +41,11 @@ export default function Step1_EpicGeneration() {
   const [loading, setLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState('');
   const [error, setError] = useState(null);
+  const [nameError, setNameError] = useState(null);
   const textareaRef = useRef(null);
+  const nameRef = useRef(null);
+
+  const hasName = (projectName || '').trim().length > 0;
 
   const descriptionLength = projectDescription.length;
   const validation = validateDescription(projectDescription);
@@ -56,6 +62,15 @@ export default function Step1_EpicGeneration() {
     : 'bg-gray-400';
 
   const handleGenerate = async () => {
+    // Name first: generation is a slow, paid AI call, and a project that reaches
+    // Jira without a name is worse to untangle than one that never generated.
+    if (!hasName) {
+      setNameError('Give the project a name before generating epics.');
+      nameRef.current?.focus();
+      return;
+    }
+    setNameError(null);
+
     const v = validateDescription(projectDescription);
     if (!v.ok) {
       setError(v.error);
@@ -150,6 +165,40 @@ export default function Step1_EpicGeneration() {
           </div>
         </details>
 
+        {/* Project name — required before generating */}
+        <div>
+          <label className="block text-xs font-mono uppercase tracking-wider text-gray-400 mb-2">
+            Project Name <span className="text-red-500">*</span>
+          </label>
+          <input
+            ref={nameRef}
+            type="text"
+            value={projectName || ''}
+            onChange={(e) => {
+              setProjectName(e.target.value);
+              if (nameError) setNameError(null);
+            }}
+            placeholder="e.g. Acme Store Rebuild"
+            aria-invalid={!!nameError}
+            disabled={loading}
+            className={`w-full rounded-xl border bg-gray-50 text-gray-900 placeholder-gray-400 px-4 py-2.5 text-sm
+                       focus:outline-none focus:ring-2 transition-all
+                       ${nameError
+                         ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500'
+                         : 'border-gray-200 focus:ring-teal-500/20 focus:border-teal-500'}`}
+          />
+          {nameError && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              role="alert"
+              className="mt-2 text-xs text-red-600"
+            >
+              {nameError}
+            </motion.p>
+          )}
+        </div>
+
         {/* Textarea */}
         <div>
           <label className="block text-xs font-mono uppercase tracking-wider text-gray-400 mb-2">
@@ -226,7 +275,7 @@ export default function Step1_EpicGeneration() {
         {/* Generate button */}
         <motion.button
           onClick={handleGenerate}
-          disabled={loading || !validation.ok}
+          disabled={loading || !validation.ok || !hasName}
           className="w-full flex items-center justify-center gap-2 text-sm font-semibold
                      bg-teal-500 text-white rounded-xl px-6 py-3
                      hover:bg-teal-600 active:scale-[0.98] transition-all
