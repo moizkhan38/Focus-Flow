@@ -1,8 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { WorkflowProvider, useWorkflow } from './context/WorkflowContext'
 import { ProjectsProvider } from './hooks/useProjects'
 import { NotificationsProvider } from './hooks/useNotifications'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { createContext, useContext, Component } from 'react'
 import { useTheme } from './hooks/useTheme'
 import NotificationToast from './components/shared/NotificationToast'
@@ -127,14 +127,28 @@ function WorkflowApp() {
 }
 
 // ─── Sidebar layout for new pages ──────────────────────────────────────────
+// Each route renders its own SidebarLayout, so this remounts on navigation and
+// the keyed motion.div replays its enter animation. Deliberately enter-only:
+// an exit animation would need AnimatePresence above <Routes>, which fights the
+// scroll container below (hence overflowAnchor: none).
 function SidebarLayout({ children }) {
+  const { pathname } = useLocation()
+  const reduceMotion = useReducedMotion()
+
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-950">
       <Sidebar />
       {/* pt-14 clears the fixed mobile top bar; from lg up the sidebar is a
           static column again and no offset is needed. */}
       <div className="flex-1 overflow-auto pt-14 lg:pt-0" style={{ overflowAnchor: 'none' }}>
-        {children}
+        <motion.div
+          key={pathname}
+          initial={reduceMotion ? false : { opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: reduceMotion ? 0 : 0.32, ease: [0.16, 1, 0.3, 1] }}
+        >
+          {children}
+        </motion.div>
       </div>
     </div>
   )

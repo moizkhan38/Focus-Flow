@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   Plug, CheckCircle2, AlertCircle, Loader2, Trash2, ExternalLink,
   ShieldAlert, Github, Layers,
@@ -11,6 +12,11 @@ import { apiJson } from '../lib/api.js';
 // Each organization connects its OWN Jira + GitHub here. Tokens are write-only:
 // they are sent to the backend, encrypted at rest, and never returned — so the
 // inputs stay empty and connected state shows only non-secret metadata.
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] } },
+};
 
 export default function Settings() {
   const { jira, github, isAdmin, isLoading, mutate } = useIntegrations();
@@ -41,10 +47,19 @@ export default function Settings() {
         </div>
       )}
 
-      <div className="space-y-6">
-        <JiraCard status={jira} isAdmin={isAdmin} isLoading={isLoading} onChange={mutate} />
-        <GithubCard status={github} isAdmin={isAdmin} isLoading={isLoading} onChange={mutate} />
-      </div>
+      <motion.div
+        className="space-y-6"
+        initial="hidden"
+        animate="show"
+        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.08 } } }}
+      >
+        <motion.div variants={cardVariants}>
+          <JiraCard status={jira} isAdmin={isAdmin} isLoading={isLoading} onChange={mutate} />
+        </motion.div>
+        <motion.div variants={cardVariants}>
+          <GithubCard status={github} isAdmin={isAdmin} isLoading={isLoading} onChange={mutate} />
+        </motion.div>
+      </motion.div>
     </div>
   );
 }
