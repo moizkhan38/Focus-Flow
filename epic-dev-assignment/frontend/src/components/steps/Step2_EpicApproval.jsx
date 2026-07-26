@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, RefreshCw, ChevronDown, Loader2, Trash2 } from 'lucide-react';
+import { Check, X, RefreshCw, ChevronDown, Loader2, Trash2, Pencil } from 'lucide-react';
 
 function clean(text) {
   if (!text || typeof text !== 'string') return text;
@@ -54,16 +54,128 @@ function RegenInput({ componentId, label, onSubmit, onCancel, isLoading }) {
   );
 }
 
+/**
+ * Inline editor for any generated item. `fields` describes what to render:
+ *   { key, label, value, type: 'text' | 'textarea' | 'number' | 'list', rows }
+ *
+ * 'list' edits an array (test-case expected results) as one entry per line,
+ * which is far easier to work with than a row of inputs.
+ */
+function EditPanel({ title, componentId, fields, onSave, onCancel }) {
+  const [draft, setDraft] = useState(() =>
+    Object.fromEntries(
+      fields.map((f) => [
+        f.key,
+        f.type === 'list' ? (f.value || []).join('\n') : (f.value ?? ''),
+      ])
+    )
+  );
+
+  const set = (key, v) => setDraft((prev) => ({ ...prev, [key]: v }));
+
+  const handleSave = () => {
+    const patch = {};
+    for (const f of fields) {
+      const raw = draft[f.key];
+      if (f.type === 'list') {
+        patch[f.key] = String(raw).split('\n').map((s) => s.trim()).filter(Boolean);
+      } else if (f.type === 'number') {
+        const n = parseInt(raw, 10);
+        patch[f.key] = Number.isFinite(n) ? n : f.value;
+      } else {
+        patch[f.key] = String(raw).trim();
+      }
+    }
+    onSave(patch);
+  };
+
+  const inputCls =
+    'w-full text-sm rounded-lg border border-gray-200 bg-white text-gray-900 placeholder-gray-400 px-3 py-2 ' +
+    'focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      exit={{ opacity: 0, height: 0 }}
+      className="mt-3 p-4 rounded-xl bg-blue-50 border border-blue-200 space-y-3 overflow-hidden"
+    >
+      <div className="flex items-center gap-2 text-sm font-medium text-blue-700">
+        <Pencil className="w-3.5 h-3.5" />
+        <span>Edit {title}:</span>
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono bg-blue-100 text-blue-700">
+          {componentId}
+        </span>
+      </div>
+
+      {fields.map((f) => (
+        <div key={f.key}>
+          <label className="block text-[11px] font-mono uppercase tracking-wider text-gray-500 mb-1">
+            {f.label}
+          </label>
+          {f.type === 'textarea' || f.type === 'list' ? (
+            <textarea
+              value={draft[f.key]}
+              onChange={(e) => set(f.key, e.target.value)}
+              rows={f.rows || 3}
+              placeholder={f.type === 'list' ? 'One per line' : undefined}
+              className={inputCls + ' resize-vertical'}
+            />
+          ) : (
+            <input
+              type={f.type === 'number' ? 'number' : 'text'}
+              value={draft[f.key]}
+              onChange={(e) => set(f.key, e.target.value)}
+              className={inputCls}
+            />
+          )}
+        </div>
+      ))}
+
+      <div className="flex gap-2">
+        <button
+          onClick={handleSave}
+          className="text-xs py-2 px-4 rounded-lg font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-all"
+        >
+          Save changes
+        </button>
+        <button
+          onClick={onCancel}
+          className="text-xs py-2 px-4 rounded-lg font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 transition-all"
+        >
+          Cancel
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+/** Small pencil button used next to Regen / Approve. */
+function EditButton({ onClick, label = 'Edit', size = 'sm' }) {
+  const cls =
+    size === 'sm'
+      ? 'text-xs py-1 px-3 rounded-lg font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 transition-all'
+      : 'text-sm py-2.5 px-5 rounded-lg font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 transition-all';
+  return (
+    <button onClick={onClick} className={cls}>
+      <Pencil className={`${size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5'} inline mr-1`} />
+      {label}
+    </button>
+  );
+}
+
 export default function Step2_EpicApproval() {
   const {
     generatedEpics, approveEpic, approveStory, approveAC, approveTestCase,
     cancelEpic, regenerateEpic, regenerateStory, regenerateAC, regenerateTestCase,
+    editEpic, editStory, editTestCase,
     setApprovedEpics, nextStep, previousStep
   } = useWorkflow();
 
   const [expandedEpics, setExpandedEpics] = useState({});
   const [regenerating, setRegenerating] = useState({});
   const [regenOpen, setRegenOpen] = useState({});
+  const [editOpen, setEditOpen] = useState({});
 
   useEffect(() => {
     if (generatedEpics.length > 0) {
@@ -91,6 +203,14 @@ export default function Step2_EpicApproval() {
 
   const openRegenInput = (key) => setRegenOpen(prev => ({ ...prev, [key]: true }));
   const closeRegenInput = (key) => setRegenOpen(prev => ({ ...prev, [key]: false }));
+
+  // Editing and regenerating the same item at once would be two competing
+  // sources of truth, so opening one closes the other.
+  const openEdit = (key) => {
+    setRegenOpen(prev => ({ ...prev, [key]: false }));
+    setEditOpen(prev => ({ ...prev, [key]: true }));
+  };
+  const closeEdit = (key) => setEditOpen(prev => ({ ...prev, [key]: false }));
 
   const handleRegenerate = async (key, fn, requirements) => {
     setRegenerating(prev => ({ ...prev, [key]: true }));
@@ -156,6 +276,12 @@ export default function Step2_EpicApproval() {
             openRegenInput={openRegenInput}
             closeRegenInput={closeRegenInput}
             handleRegenerate={handleRegenerate}
+            editOpen={editOpen}
+            openEdit={openEdit}
+            closeEdit={closeEdit}
+            editEpic={editEpic}
+            editStory={editStory}
+            editTestCase={editTestCase}
             approveEpic={approveEpic}
             approveStory={approveStory}
             approveAC={approveAC}
@@ -192,6 +318,7 @@ export default function Step2_EpicApproval() {
 function EpicCard({
   epic, eIndex, expanded, onToggle,
   regenerating, regenOpen, openRegenInput, closeRegenInput, handleRegenerate,
+  editOpen, openEdit, closeEdit, editEpic, editStory, editTestCase,
   approveEpic, approveStory, approveAC, approveTestCase,
   cancelEpic, regenerateEpic, regenerateStory, regenerateAC, regenerateTestCase
 }) {
@@ -276,6 +403,9 @@ function EpicCard({
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-mono uppercase tracking-wider text-gray-400">Acceptance Criteria</span>
                         <div className="flex gap-2">
+                          {!editOpen[`ac-${story.story_id}`] && (
+                            <EditButton onClick={() => openEdit(`ac-${story.story_id}`)} />
+                          )}
                           {!regenOpen[`ac-${story.story_id}`] && (
                             <button onClick={() => openRegenInput(`ac-${story.story_id}`)} className="text-xs py-1 px-3 rounded-lg font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 transition-all">
                               <RefreshCw className="w-3 h-3 inline mr-1" />Regen
@@ -291,6 +421,19 @@ function EpicCard({
                       <div className="text-gray-600 whitespace-pre-wrap text-[13px] leading-relaxed">
                         {clean(story.acceptance_criteria)}
                       </div>
+                      <AnimatePresence>
+                        {editOpen[`ac-${story.story_id}`] && (
+                          <EditPanel
+                            title="Acceptance Criteria"
+                            componentId={story.story_id}
+                            fields={[
+                              { key: 'acceptance_criteria', label: 'Acceptance Criteria', value: story.acceptance_criteria, type: 'textarea', rows: 5 },
+                            ]}
+                            onCancel={() => closeEdit(`ac-${story.story_id}`)}
+                            onSave={(patch) => { editStory(eIndex, sIndex, patch); closeEdit(`ac-${story.story_id}`); }}
+                          />
+                        )}
+                      </AnimatePresence>
                       <AnimatePresence>
                         {regenOpen[`ac-${story.story_id}`] && (
                           <RegenInput
@@ -325,6 +468,9 @@ function EpicCard({
                       <div className="flex items-center justify-between mb-2">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono bg-gray-100 text-gray-500">{tc.test_case_id}</span>
                         <div className="flex gap-2">
+                          {!editOpen[`tc-${tc.test_case_id}`] && (
+                            <EditButton onClick={() => openEdit(`tc-${tc.test_case_id}`)} />
+                          )}
                           {!regenOpen[`tc-${tc.test_case_id}`] && (
                             <button onClick={() => openRegenInput(`tc-${tc.test_case_id}`)} className="text-xs py-1 px-3 rounded-lg font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 transition-all">
                               <RefreshCw className="w-3 h-3 inline mr-1" />Regen
@@ -374,6 +520,23 @@ function EpicCard({
                         </div>
                       )}
                       <AnimatePresence>
+                        {editOpen[`tc-${tc.test_case_id}`] && (
+                          <EditPanel
+                            title="Test Case"
+                            componentId={tc.test_case_id}
+                            fields={[
+                              { key: 'test_case_description', label: 'Description', value: tc.test_case_description, type: 'textarea', rows: 2 },
+                              { key: 'input_preconditions', label: 'Preconditions', value: tc.input_preconditions, type: 'textarea', rows: 2 },
+                              { key: 'input_test_data', label: 'Test Data', value: tc.input_test_data, type: 'textarea', rows: 2 },
+                              { key: 'input_user_action', label: 'User Action', value: tc.input_user_action, type: 'textarea', rows: 2 },
+                              { key: 'expected_results', label: 'Expected Results (one per line)', value: tc.expected_results, type: 'list', rows: 4 },
+                            ]}
+                            onCancel={() => closeEdit(`tc-${tc.test_case_id}`)}
+                            onSave={(patch) => { editTestCase(eIndex, sIndex, tcIndex, patch); closeEdit(`tc-${tc.test_case_id}`); }}
+                          />
+                        )}
+                      </AnimatePresence>
+                      <AnimatePresence>
                         {regenOpen[`tc-${tc.test_case_id}`] && (
                           <RegenInput
                             componentId={tc.test_case_id}
@@ -407,7 +570,27 @@ function EpicCard({
                         <RefreshCw className="w-3 h-3 inline mr-1" />Regenerate Story
                       </button>
                     )}
+                    {!editOpen[`story-${story.story_id}`] && (
+                      <button onClick={() => openEdit(`story-${story.story_id}`)} className="text-xs py-2 px-4 rounded-lg font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 transition-all">
+                        <Pencil className="w-3 h-3 inline mr-1" />Edit Story
+                      </button>
+                    )}
                   </div>
+                  <AnimatePresence>
+                    {editOpen[`story-${story.story_id}`] && (
+                      <EditPanel
+                        title="User Story"
+                        componentId={story.story_id}
+                        fields={[
+                          { key: 'story_title', label: 'Title', value: story.story_title, type: 'text' },
+                          { key: 'story_description', label: 'Description', value: story.story_description, type: 'textarea', rows: 3 },
+                          { key: 'story_points', label: 'Story Points', value: story.story_points, type: 'number' },
+                        ]}
+                        onCancel={() => closeEdit(`story-${story.story_id}`)}
+                        onSave={(patch) => { editStory(eIndex, sIndex, patch); closeEdit(`story-${story.story_id}`); }}
+                      />
+                    )}
+                  </AnimatePresence>
                   <AnimatePresence>
                     {regenOpen[`story-${story.story_id}`] && (
                       <RegenInput
@@ -442,6 +625,9 @@ function EpicCard({
                     <RefreshCw className="w-3.5 h-3.5 inline mr-1" />Regenerate
                   </button>
                 )}
+                {!editOpen[`epic-${epic.epic_id}`] && (
+                  <EditButton size="lg" label="Edit Epic" onClick={() => openEdit(`epic-${epic.epic_id}`)} />
+                )}
                 <button
                   onClick={() => { if (confirm('Remove this epic?')) cancelEpic(eIndex); }}
                   className="text-sm py-2.5 px-5 rounded-lg font-medium text-red-500 bg-red-50
@@ -450,6 +636,20 @@ function EpicCard({
                   <Trash2 className="w-3.5 h-3.5 inline mr-1" />Remove
                 </button>
               </div>
+              <AnimatePresence>
+                {editOpen[`epic-${epic.epic_id}`] && (
+                  <EditPanel
+                    title="Epic"
+                    componentId={epic.epic_id}
+                    fields={[
+                      { key: 'epic_title', label: 'Title', value: epic.epic_title, type: 'text' },
+                      { key: 'epic_description', label: 'Description', value: epic.epic_description, type: 'textarea', rows: 4 },
+                    ]}
+                    onCancel={() => closeEdit(`epic-${epic.epic_id}`)}
+                    onSave={(patch) => { editEpic(eIndex, patch); closeEdit(`epic-${epic.epic_id}`); }}
+                  />
+                )}
+              </AnimatePresence>
               <AnimatePresence>
                 {regenOpen[`epic-${epic.epic_id}`] && (
                   <RegenInput

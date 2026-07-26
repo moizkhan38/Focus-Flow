@@ -196,6 +196,58 @@ export function WorkflowProvider({ children }) {
       });
     },
 
+    // ─── Manual edits ────────────────────────────────────────────────────────
+    // Regeneration asks the model for new text; these apply the user's own.
+    // Each merges a partial patch so a caller can change one field without
+    // restating the rest. Approval flags are deliberately left untouched: the
+    // user is refining wording, and silently un-approving would lose their place.
+
+    editEpic: (epicIndex, patch) => {
+      setState(prev => ({
+        ...prev,
+        generatedEpics: prev.generatedEpics.map((epic, ei) =>
+          ei === epicIndex ? { ...epic, ...patch } : epic
+        )
+      }));
+    },
+
+    // Also used for acceptance criteria, which lives on the story object.
+    editStory: (epicIndex, storyIndex, patch) => {
+      setState(prev => ({
+        ...prev,
+        generatedEpics: prev.generatedEpics.map((epic, ei) => {
+          if (ei !== epicIndex) return epic;
+          return {
+            ...epic,
+            user_stories: epic.user_stories.map((story, si) =>
+              si === storyIndex ? { ...story, ...patch } : story
+            )
+          };
+        })
+      }));
+    },
+
+    editTestCase: (epicIndex, storyIndex, tcIndex, patch) => {
+      setState(prev => ({
+        ...prev,
+        generatedEpics: prev.generatedEpics.map((epic, ei) => {
+          if (ei !== epicIndex) return epic;
+          return {
+            ...epic,
+            user_stories: epic.user_stories.map((story, si) => {
+              if (si !== storyIndex) return story;
+              return {
+                ...story,
+                test_cases: story.test_cases.map((tc, ti) =>
+                  ti === tcIndex ? { ...tc, ...patch } : tc
+                )
+              };
+            })
+          };
+        })
+      }));
+    },
+
     // Regeneration actions
     regenerateEpic: async (epicIndex, userRequirements = '') => {
       const epic = state.generatedEpics[epicIndex];
