@@ -4,7 +4,6 @@ import { useClerk, OrganizationSwitcher } from '@clerk/clerk-react';
 import {
   FolderKanban,
   PlusCircle,
-  Zap,
   Users,
   LayoutDashboard,
   LogOut,
@@ -12,6 +11,7 @@ import {
   Menu,
   X,
 } from 'lucide-react';
+import LogoMark from '../shared/Logo';
 
 const navSections = [
   {
@@ -87,9 +87,7 @@ export default function Sidebar() {
           <Menu className="h-5 w-5" />
         </button>
         <div className="flex min-w-0 items-center gap-2">
-          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-blue-600">
-            <Zap className="h-4 w-4 text-white" />
-          </div>
+          <LogoMark className="h-7 w-7" />
           <span className="truncate text-sm font-semibold text-gray-900 dark:text-white">Focus Flow</span>
         </div>
       </div>
@@ -110,9 +108,7 @@ export default function Sidebar() {
       >
         {/* Logo */}
         <div className="flex h-14 items-center gap-2 border-b border-gray-200 dark:border-white/10 px-4">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600">
-            <Zap className="h-4 w-4 text-white" />
-          </div>
+          <LogoMark className="h-7 w-7" />
           <span className="text-sm font-semibold text-gray-900 dark:text-white">Focus Flow</span>
           <button
             type="button"

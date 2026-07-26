@@ -1,8 +1,9 @@
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useThemeContext } from '../../App';
 import { OrganizationSwitcher, UserButton } from '@clerk/clerk-react';
-import { Sparkles, Sun, Moon } from 'lucide-react';
+import { Sun, Moon } from 'lucide-react';
 import { motion } from 'framer-motion';
+import LogoMark from '../shared/Logo';
 
 export default function Header() {
   const { reset } = useWorkflow();
@@ -18,11 +19,7 @@ export default function Header() {
     <header className="sticky top-0 z-50 backdrop-blur-2xl" style={{ background: 'var(--bg-overlay)' }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <div className="relative w-9 h-9 flex-shrink-0 rounded-xl bg-gradient-to-br from-[var(--accent-cyan)] via-[var(--accent-purple)] to-[var(--accent-lime)] p-[1px]">
-            <div className="w-full h-full rounded-[11px] flex items-center justify-center" style={{ background: 'var(--gradient-border-inner)' }}>
-              <Sparkles className="w-4 h-4" style={{ color: 'var(--accent-cyan)' }} />
-            </div>
-          </div>
+          <LogoMark className="w-9 h-9" />
           <div className="min-w-0">
             <h1 className="text-xs sm:text-sm font-semibold tracking-tight leading-tight truncate" style={{ color: 'var(--text-primary)' }}>
               Epic & Dev Assignment
