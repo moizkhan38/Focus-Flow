@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Plug, CheckCircle2, AlertCircle, Loader2, Trash2, ExternalLink,
-  ShieldAlert, Github, Layers,
+  ShieldAlert, Github, Layers, MessageSquare, RefreshCw, XCircle, Info,
 } from 'lucide-react';
-import { useIntegrations } from '../hooks/useIntegrations';
+import { useIntegrations, useSlackStatus } from '../hooks/useIntegrations';
 import { useNotifications } from '../hooks/useNotifications';
 import { apiJson } from '../lib/api.js';
 
@@ -20,6 +20,7 @@ const cardVariants = {
 
 export default function Settings() {
   const { jira, github, isAdmin, isLoading, mutate } = useIntegrations();
+  const { slack, isLoading: slackLoading, mutate: refreshSlack } = useSlackStatus();
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">
@@ -30,7 +31,8 @@ export default function Settings() {
         </h1>
         <p className="text-muted mt-1">
           Connect your organization's Jira and GitHub. Credentials are encrypted and
-          scoped to this organization only.
+          scoped to this organization only. The Slack standup bot is configured on the
+          server — its status is shown below.
         </p>
       </div>
 
@@ -58,6 +60,9 @@ export default function Settings() {
         </motion.div>
         <motion.div variants={cardVariants}>
           <GithubCard status={github} isAdmin={isAdmin} isLoading={isLoading} onChange={mutate} />
+        </motion.div>
+        <motion.div variants={cardVariants}>
+          <SlackCard status={slack} isLoading={slackLoading} onRefresh={refreshSlack} />
         </motion.div>
       </motion.div>
     </div>
@@ -422,6 +427,150 @@ function GithubCard({ status, isAdmin, isLoading, onChange }) {
           onDisconnect={handleDisconnect}
           connectLabel={connected ? 'Update token' : 'Connect GitHub'}
         />
+      </div>
+    </IntegrationCard>
+  );
+}
+
+// ─── Slack / Standup bot ─────────────────────────────────────────────────────
+//
+// Read-only by design. Unlike Jira and GitHub, a Slack workspace cannot be
+// connected by pasting a token — it must *install* the app via OAuth, and the
+// install has to prove which org it belongs to. That is Phase 4; today the bot
+// is bound to one workspace and one org through its own env (decision D6).
+// Rather than render a form that cannot work, this card reports actual state.
+
+function CheckRow({ ok, label, detail }) {
+  return (
+    <div className="flex items-start gap-2">
+      {ok
+        ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+        : <XCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />}
+      <div className="min-w-0">
+        <p className="text-sm text-heading">{label}</p>
+        {detail && <p className="text-xs text-faint break-words">{detail}</p>}
+      </div>
+    </div>
+  );
+}
+
+function SlackCard({ status, isLoading, onRefresh }) {
+  const cfg = status?.configured;
+  const lastAt = status?.lastStandupAt ? new Date(status.lastStandupAt) : null;
+
+  return (
+    <IntegrationCard
+      icon={MessageSquare}
+      title="Slack — Standup Bot"
+      subtitle="Collects daily standups via /standup and surfaces them on the dashboard."
+      status={{ connected: status?.connected }}
+      isLoading={isLoading}
+    >
+      {isLoading && (
+        <p className="text-sm text-muted flex items-center gap-2">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking the bot…
+        </p>
+      )}
+
+      {!isLoading && status && !status.reachable && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+          <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-heading">Bot not running</p>
+            <p className="text-xs text-muted">
+              The standup service is unreachable, so standup history won't load. It's an
+              optional service — the rest of Focus Flow works without it.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!isLoading && status && status.reachable && !status.authorized && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+          <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-heading">Bot rejected the connection</p>
+            <p className="text-xs text-muted">
+              INTERNAL_API_KEY doesn't match between the backend and the bot.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!isLoading && status?.reachable && status?.authorized && (
+        <>
+          <div className="mb-4 grid gap-2 sm:grid-cols-2">
+            <CheckRow ok={cfg?.slack} label="Slack token" detail={status.workspace ? `Workspace: ${status.workspace}` : 'SLACK_BOT_TOKEN not set'} />
+            <CheckRow ok={cfg?.signingSecret} label="Signing secret" detail={cfg?.signingSecret ? 'Requests are verified' : 'SLACK_SIGNING_SECRET not set'} />
+            <CheckRow ok={cfg?.gemini} label="Gemini key" detail={cfg?.gemini ? 'Standup analysis enabled' : 'GEMINI_API_KEY not set'} />
+            <CheckRow ok={cfg?.jira} label="Jira (bot's own)" detail={status.jiraProjectKey ? `Default project: ${status.jiraProjectKey}` : 'JIRA_URL / JIRA_API_TOKEN not set'} />
+          </div>
+
+          {/* The single most consequential setting: if the bot is bound to a
+              different org, its standups never appear for this one. */}
+          <div
+            className={`mb-4 flex items-start gap-2 rounded-lg border p-3 ${
+              status.boundToThisOrg
+                ? 'border-emerald-500/30 bg-emerald-500/10'
+                : 'border-amber-500/30 bg-amber-500/10'
+            }`}
+          >
+            {status.boundToThisOrg
+              ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+              : <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />}
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-heading">
+                {status.boundToThisOrg
+                  ? 'Bound to this organization'
+                  : status.boundOrgId
+                    ? 'Bound to a different organization'
+                    : 'No organization binding'}
+              </p>
+              <p className="text-xs text-muted break-words">
+                {status.boundToThisOrg
+                  ? 'Standups submitted in Slack appear on this org\'s dashboard.'
+                  : status.boundOrgId
+                    ? `The bot writes standups to ${status.boundOrgId}, not here. Set STANDUP_ORG_ID to this org to change that.`
+                    : 'STANDUP_ORG_ID is empty, so standups are not attached to any organization.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="mb-4 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
+            <span>{status.standupCount} standup{status.standupCount === 1 ? '' : 's'} recorded</span>
+            {lastAt && <span>Last: {lastAt.toLocaleString()}</span>}
+            {status.reminder && <span>Daily reminder: {status.reminder}</span>}
+          </div>
+        </>
+      )}
+
+      <div className="flex items-start gap-2 rounded-lg border border-default p-3">
+        <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+        <p className="text-xs text-muted">
+          This workspace is configured on the server, not from here — Slack requires an
+          OAuth install rather than a pasted token, so per-organization connection is a
+          later phase. Set the bot's environment variables and restart it to change any
+          of the above.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 pt-3">
+        <button
+          onClick={onRefresh}
+          disabled={isLoading}
+          className="inline-flex items-center gap-2 rounded-lg border border-default px-3.5 py-2 text-sm font-medium text-heading hover:bg-gray-50 disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          Re-check
+        </button>
+        <a
+          href="https://api.slack.com/apps"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+        >
+          Slack app settings <ExternalLink className="w-3 h-3" />
+        </a>
       </div>
     </IntegrationCard>
   );

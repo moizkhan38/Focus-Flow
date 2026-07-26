@@ -2,6 +2,7 @@ import express from 'express';
 import fetch from 'node-fetch';
 import { requireOrgAdmin } from '../middleware/auth.js';
 import { sendServerError } from '../utils/httpError.js';
+import { query } from '../db.js';
 import {
   getStatus,
   setIntegration,
@@ -81,6 +82,73 @@ async function testGithub({ token }) {
   if (res.status === 401) return { ok: false, error: 'GitHub rejected this token.' };
   return { ok: false, error: `GitHub responded ${res.status}` };
 }
+
+// ─── standup bot (Slack) ────────────────────────────────────────────────────
+// Read-only status, not a credential form. Per decision D6 the bot is bound to
+// ONE Slack workspace and ONE org via its own env; a workspace cannot be
+// connected from the UI because Slack requires an OAuth install, not a pasted
+// token (Phase 4). So this reports reality rather than pretending to configure it.
+
+const FOCUS_FLOW_URL = process.env.FOCUS_FLOW_URL || 'http://localhost:3000';
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
+
+async function fetchBotStatus() {
+  const controller = new AbortController();
+  // Settings must stay responsive when the bot is down — it often is, since the
+  // bot is optional and currently not deployed.
+  const timer = setTimeout(() => controller.abort(), 3000);
+  try {
+    const r = await fetch(`${FOCUS_FLOW_URL}/api/standup/status`, {
+      headers: INTERNAL_API_KEY ? { 'X-Internal-Key': INTERNAL_API_KEY } : {},
+      signal: controller.signal,
+    });
+    if (r.status === 401) return { reachable: true, authorized: false };
+    if (!r.ok) return { reachable: true, authorized: true, error: `Bot responded ${r.status}` };
+    return { reachable: true, authorized: true, ...(await r.json()) };
+  } catch {
+    return { reachable: false, authorized: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// GET /api/integrations/slack — standup bot status for this org (any member).
+router.get('/integrations/slack', async (req, res) => {
+  try {
+    const [bot, counts] = await Promise.all([
+      fetchBotStatus(),
+      query(
+        `SELECT COUNT(*)::int AS total, MAX(timestamp) AS last_at
+           FROM standups WHERE org_id = $1`,
+        [req.orgId]
+      ).then((r) => r.rows[0]).catch(() => ({ total: 0, last_at: null })),
+    ]);
+
+    // "Bound to this org" is what decides whether standups submitted in Slack
+    // will actually surface here — surface it plainly rather than as a boolean.
+    const boundToThisOrg = !!bot.orgId && bot.orgId === req.orgId;
+
+    res.json({
+      success: true,
+      slack: {
+        reachable: bot.reachable,
+        authorized: bot.authorized !== false,
+        connected: !!(bot.reachable && bot.authorized !== false && bot.configured?.slack),
+        workspace: bot.workspace || null,
+        boundOrgId: bot.orgId || null,
+        boundToThisOrg,
+        reminder: bot.reminder || null,
+        jiraProjectKey: bot.jiraProjectKey || null,
+        configured: bot.configured || null,
+        error: bot.error || null,
+        standupCount: counts.total || 0,
+        lastStandupAt: counts.last_at || null,
+      },
+    });
+  } catch (err) {
+    sendServerError(res, err);
+  }
+});
 
 // ─── routes ─────────────────────────────────────────────────────────────────
 

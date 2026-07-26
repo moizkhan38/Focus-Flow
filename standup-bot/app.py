@@ -697,6 +697,53 @@ def api_health():
     return jsonify({'status': 'running', 'service': 'Focus Flow Standup', 'port': 3000}), 200
 
 
+# Workspace name is shown in the Integrations UI. auth.test needs no scope, but
+# it is still a network call per request — cache it.
+_workspace_cache = {"name": None, "fetched_at": 0}
+WORKSPACE_TTL_SECONDS = 600
+
+
+def _slack_workspace_name():
+    import time
+    now = time.time()
+    if _workspace_cache["name"] and now - _workspace_cache["fetched_at"] < WORKSPACE_TTL_SECONDS:
+        return _workspace_cache["name"]
+    try:
+        info = slack_client.auth_test()
+        _workspace_cache["name"] = info.get("team")
+        _workspace_cache["fetched_at"] = now
+        return _workspace_cache["name"]
+    except Exception as e:
+        log.warning(f"Slack auth.test failed: {e}")
+        return None
+
+
+@app.route('/api/standup/status', methods=['GET'])
+def api_standup_status():
+    """Configuration snapshot for the Integrations UI.
+
+    Reports which dependencies are configured and which Slack workspace / Clerk
+    org this single-workspace deployment is bound to (D6). Booleans and names
+    only — never token material. Behind the internal-key gate with the rest of
+    /api/standup/*, so only Express can call it.
+    """
+    slack_configured = bool(os.environ.get("SLACK_BOT_TOKEN"))
+    return jsonify({
+        'success': True,
+        'orgId': STANDUP_ORG_ID or None,
+        'workspace': _slack_workspace_name() if slack_configured else None,
+        'reminder': f"{REMINDER_HOUR:02d}:{REMINDER_MINUTE:02d}",
+        'jiraProjectKey': os.environ.get("JIRA_PROJECT_KEY") or None,
+        'configured': {
+            'slack': slack_configured,
+            'signingSecret': bool(SLACK_SIGNING_SECRET),
+            'gemini': bool(os.environ.get("GEMINI_API_KEY")),
+            'jira': bool(os.environ.get("JIRA_URL") and os.environ.get("JIRA_API_TOKEN")),
+            'orgBinding': bool(STANDUP_ORG_ID),
+        },
+    }), 200
+
+
 def _load_standups_from_db(project_key=None):
     """Read standups from Postgres via the Express backend. Returns None on failure."""
     try:

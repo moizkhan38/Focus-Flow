@@ -31,3 +31,23 @@ export function useIntegrations() {
     mutate,
   };
 }
+
+// Standup bot (Slack) status. Deliberately a separate request from the one
+// above: it round-trips to the bot, which is optional and frequently down, and
+// a 3s timeout there must not stall the Jira/GitHub cards.
+export function useSlackStatus() {
+  const { organization } = useOrganization();
+
+  const { data, error, isLoading, mutate } = useSWR(
+    organization ? `/api/integrations/slack?org=${organization.id}` : null,
+    () => fetcher('/api/integrations/slack'),
+    { revalidateOnFocus: false, dedupingInterval: 30000 }
+  );
+
+  return {
+    slack: data?.slack || null,
+    error,
+    isLoading,
+    mutate,
+  };
+}
