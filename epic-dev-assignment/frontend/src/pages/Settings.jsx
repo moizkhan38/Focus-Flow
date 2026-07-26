@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Plug, CheckCircle2, AlertCircle, Loader2, Trash2, ExternalLink,
-  ShieldAlert, Github, Layers, MessageSquare, RefreshCw, XCircle, Info,
+  ShieldAlert, Github, Layers, MessageSquare, RefreshCw,
 } from 'lucide-react';
 import { useIntegrations, useSlackStatus } from '../hooks/useIntegrations';
 import { useNotifications } from '../hooks/useNotifications';
@@ -440,20 +440,6 @@ function GithubCard({ status, isAdmin, isLoading, onChange }) {
 // is bound to one workspace and one org through its own env (decision D6).
 // Rather than render a form that cannot work, this card reports actual state.
 
-function CheckRow({ ok, label, detail }) {
-  return (
-    <div className="flex items-start gap-2">
-      {ok
-        ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-        : <XCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />}
-      <div className="min-w-0">
-        <p className="text-sm text-heading">{label}</p>
-        {detail && <p className="text-xs text-faint break-words">{detail}</p>}
-      </div>
-    </div>
-  );
-}
-
 function SlackCard({ status, isAdmin, isLoading, onRefresh }) {
   const { notify } = useNotifications();
   const [botToken, setBotToken] = useState('');
@@ -462,8 +448,6 @@ function SlackCard({ status, isAdmin, isLoading, onRefresh }) {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState('');
 
-  const cfg = status?.configured;
-  const lastAt = status?.lastStandupAt ? new Date(status.lastStandupAt) : null;
   const stored = !!status?.credentialsStored;
 
   const handleConnect = async () => {
@@ -560,59 +544,12 @@ function SlackCard({ status, isAdmin, isLoading, onRefresh }) {
         </div>
       )}
 
-      {!isLoading && status?.reachable && status?.authorized && (
-        <>
-          <div className="mb-4 grid gap-2 sm:grid-cols-2">
-            <CheckRow ok={cfg?.slack} label="Slack token" detail={status.workspace ? `Workspace: ${status.workspace}` : 'SLACK_BOT_TOKEN not set'} />
-            <CheckRow ok={cfg?.signingSecret} label="Signing secret" detail={cfg?.signingSecret ? 'Requests are verified' : 'SLACK_SIGNING_SECRET not set'} />
-            <CheckRow ok={cfg?.gemini} label="Gemini key" detail={cfg?.gemini ? 'Standup analysis enabled' : 'GEMINI_API_KEY not set'} />
-            <CheckRow ok={cfg?.jira} label="Jira (bot's own)" detail={status.jiraProjectKey ? `Default project: ${status.jiraProjectKey}` : 'JIRA_URL / JIRA_API_TOKEN not set'} />
-          </div>
-
-          {/* The single most consequential setting: if the bot is bound to a
-              different org, its standups never appear for this one. */}
-          <div
-            className={`mb-4 flex items-start gap-2 rounded-lg border p-3 ${
-              status.boundToThisOrg
-                ? 'border-emerald-500/30 bg-emerald-500/10'
-                : 'border-amber-500/30 bg-amber-500/10'
-            }`}
-          >
-            {status.boundToThisOrg
-              ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-              : <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />}
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-heading">
-                {status.boundToThisOrg
-                  ? 'Bound to this organization'
-                  : status.boundOrgId
-                    ? 'Bound to a different organization'
-                    : 'No organization binding'}
-              </p>
-              <p className="text-xs text-muted break-words">
-                {status.boundToThisOrg
-                  ? 'Standups submitted in Slack appear on this org\'s dashboard.'
-                  : status.boundOrgId
-                    ? `The bot writes standups to ${status.boundOrgId}, not here. Set STANDUP_ORG_ID to this org to change that.`
-                    : 'STANDUP_ORG_ID is empty, so standups are not attached to any organization.'}
-              </p>
-            </div>
-          </div>
-
-          <div className="mb-4 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
-            <span>{status.standupCount} standup{status.standupCount === 1 ? '' : 's'} recorded</span>
-            {lastAt && <span>Last: {lastAt.toLocaleString()}</span>}
-            {status.reminder && <span>Daily reminder: {status.reminder}</span>}
-          </div>
-        </>
-      )}
-
+      {/* Only the workspace name. The per-dependency checks, org binding, standup
+          counts and credential-source notice were removed as clutter — the
+          failure banners above still surface anything actually broken. */}
       {stored && (
         <p className="mb-4 text-sm text-muted">
           Connected to <span className="font-medium text-heading">{status.teamName || 'your workspace'}</span>
-          {status.tokenSuffix && (
-            <> · token ending <span className="font-mono text-heading">…{status.tokenSuffix}</span></>
-          )}
         </p>
       )}
 
@@ -671,29 +608,7 @@ function SlackCard({ status, isAdmin, isLoading, onRefresh }) {
         </a>
       </div>
 
-      {/* Saved credentials only take effect once the bot fetches them. Say so,
-          rather than letting "Connected" imply standups are flowing. */}
-      {stored && status?.reachable && status?.credentialSource === 'env' && (
-        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-          <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-          <p className="text-xs text-muted">
-            Saved here, but the bot is still using its own environment variables. It
-            re-checks about once a minute — use Re-check below, or restart the bot.
-          </p>
-        </div>
-      )}
-
-      <div className="flex items-start gap-2 rounded-lg border border-default p-3">
-        <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-        <p className="text-xs text-muted">
-          Create the Slack app in your own workspace first, then paste its credentials
-          here. Point the <span className="font-mono">/standup</span> command at{' '}
-          <span className="font-mono">/slack/command</span> and Interactivity at{' '}
-          <span className="font-mono">/slack/events</span> on the bot's public URL.
-        </p>
-      </div>
-
-      <div className="space-y-3 pt-3">
+      <div className="space-y-3 pt-1">
         <CardError message={error} />
         <div className="flex flex-wrap items-center gap-2">
           <button
