@@ -252,6 +252,11 @@ router.get('/integrations/slack', async (req, res) => {
     res.json({
       success: true,
       slack: {
+        // Public URL Slack will call. Not a secret — it is exactly what gets
+        // typed into the Slack app config — and the UI needs it to build the
+        // app manifest for the user.
+        botUrl: FOCUS_FLOW_URL,
+
         // Credentials saved here, independent of whether the bot is running.
         credentialsStored: !!stored.connected,
         teamName: stored.teamName || null,

@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   Plug, CheckCircle2, AlertCircle, Loader2, Trash2, ExternalLink,
   ShieldAlert, Github, Layers, MessageSquare, RefreshCw, Sparkles,
-  ChevronDown, HelpCircle,
+  ChevronDown, HelpCircle, Copy, Check,
 } from 'lucide-react';
 import { useIntegrations, useSlackStatus } from '../hooks/useIntegrations';
 import { useNotifications } from '../hooks/useNotifications';
@@ -74,6 +74,93 @@ function Steps({ children }) {
     <ol className="list-decimal space-y-2 pl-5 text-xs leading-relaxed text-muted marker:text-subtle">
       {children}
     </ol>
+  );
+}
+
+// ─── Slack app manifest ──────────────────────────────────────────────────────
+// Slack has no API that creates a bot in someone's workspace on their behalf —
+// installation requires a human admin to approve the scopes, by design. A
+// manifest is the closest thing: one document describing the app, so Slack
+// pre-fills the scopes, the slash command and both Request URLs. That removes
+// the parts of setup people actually get wrong; the user is left with
+// "Create", "Install", and pasting two values.
+
+const SLACK_BOT_SCOPES = ['chat:write', 'users:read', 'users:read.email', 'commands'];
+
+function buildSlackManifest(botUrl) {
+  const base = (botUrl || 'https://your-bot-url').replace(/\/+$/, '');
+  return JSON.stringify(
+    {
+      display_information: {
+        name: 'Focus Flow',
+        description: 'Collects daily standups and surfaces them on your Focus Flow dashboard.',
+        background_color: '#0f0b59',
+      },
+      features: {
+        bot_user: { display_name: 'Focus Flow', always_online: true },
+        slash_commands: [
+          {
+            command: '/standup',
+            url: `${base}/slack/command`,
+            description: 'Submit your daily standup',
+            should_escape: false,
+          },
+        ],
+      },
+      oauth_config: { scopes: { bot: SLACK_BOT_SCOPES } },
+      settings: {
+        interactivity: { is_enabled: true, request_url: `${base}/slack/events` },
+        org_deploy_enabled: false,
+        socket_mode_enabled: false,
+        token_rotation_enabled: false,
+      },
+    },
+    null,
+    2
+  );
+}
+
+function ManifestBlock({ botUrl }) {
+  const [copied, setCopied] = useState(false);
+  const manifest = buildSlackManifest(botUrl);
+  // Anything that isn't a public https URL cannot be reached by Slack.
+  const usable = !!botUrl && /^https:\/\//i.test(botUrl) && !/localhost|127\.0\.0\.1/i.test(botUrl);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(manifest);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-lg border border-default p-2.5">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-semibold text-heading">App manifest</span>
+        <button
+          onClick={copy}
+          className="ml-auto inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-blue-700"
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied ? 'Copied' : 'Copy manifest'}
+        </button>
+      </div>
+
+      {!usable && (
+        <p className="mb-2 text-[11px] leading-relaxed text-amber-600">
+          The bot URL below is a placeholder because this deployment has no public bot address
+          configured yet. Replace <Lit>your-bot-url</Lit> with the real one before creating the app,
+          or Slack will reject the Request URLs.
+        </p>
+      )}
+
+      <pre className="max-h-56 overflow-auto rounded-md bg-gray-900 p-2.5 text-[10px] leading-relaxed text-gray-100">
+        {manifest}
+      </pre>
+    </div>
   );
 }
 
@@ -850,51 +937,42 @@ function SlackCard({ status, isAdmin, isLoading, onRefresh }) {
         </p>
       )}
 
-      <SetupGuide title="How do I build the Slack bot and get these details?">
+      <SetupGuide title="How do I set up the Slack bot?">
         <p className="mb-2 text-[11px] leading-relaxed text-muted">
-          You create a Slack app in your own workspace, then paste two of its credentials here.
-          Nothing is installed on your behalf.
+          Slack has no API that can create a bot in your workspace for us — installing an app
+          always needs a workspace admin to approve its permissions. The manifest below is the
+          next best thing: it pre-fills the permissions, the <Lit>/standup</Lit> command and both
+          Request URLs, so you only have to click Create and Install.
         </p>
         <Steps>
+          <li>Copy the manifest below.</li>
           <li>
             Go to <Lit>api.slack.com/apps</Lit> → <Lit>Create New App</Lit> →{' '}
-            <Lit>From scratch</Lit>. Name it (e.g. <Lit>Focus Flow</Lit>) and choose your workspace.
+            <strong>From an app manifest</strong>. Pick your workspace, paste the manifest, and
+            confirm.
           </li>
           <li>
-            Open <Lit>OAuth &amp; Permissions</Lit> → <strong>Bot Token Scopes</strong> and add
-            exactly these four: <Lit>chat:write</Lit>, <Lit>users:read</Lit>,{' '}
-            <Lit>users:read.email</Lit>, <Lit>commands</Lit>.
+            Click <Lit>Install to Workspace</Lit> and approve the permissions.
           </li>
           <li>
-            Scroll up, click <Lit>Install to Workspace</Lit> and approve. Copy the{' '}
-            <strong>Bot User OAuth Token</strong> — it starts with <Lit>xoxb-</Lit>.
+            On <Lit>OAuth &amp; Permissions</Lit>, copy the <strong>Bot User OAuth Token</strong>{' '}
+            (it starts with <Lit>xoxb-</Lit>). On <Lit>Basic Information</Lit>, copy the{' '}
+            <strong>Signing Secret</strong>.
           </li>
+          <li>Paste both below and press Connect Slack.</li>
           <li>
-            Open <Lit>Basic Information</Lit> → <Lit>App Credentials</Lit> and copy the{' '}
-            <strong>Signing Secret</strong>. This is what proves incoming requests really came from
-            Slack.
-          </li>
-          <li>
-            Open <Lit>Slash Commands</Lit> → <Lit>Create New Command</Lit>. Command:{' '}
-            <Lit>/standup</Lit>. Request URL:{' '}
-            <Lit>https://&lt;your-bot-url&gt;/slack/command</Lit>
-          </li>
-          <li>
-            Open <Lit>Interactivity &amp; Shortcuts</Lit>, turn it <strong>On</strong>, and set the
-            Request URL to <Lit>https://&lt;your-bot-url&gt;/slack/events</Lit>. Without this the
-            standup form cannot be submitted.
-          </li>
-          <li>Paste the bot token and signing secret below, then press Connect Slack.</li>
-          <li>
-            Test it: type <Lit>/standup</Lit> in any Slack channel. The entry appears on your
+            Test it: type <Lit>/standup</Lit> in any Slack channel — the entry appears on your
             dashboard.
           </li>
         </Steps>
+
+        <ManifestBlock botUrl={status?.botUrl} />
+
         <Gotcha>
-          Slack verifies both Request URLs the moment you save them, so the standup bot service must
-          already be deployed and publicly reachable — otherwise saving fails. Note the endpoint is
-          called <Lit>/slack/events</Lit> but it handles <em>interactivity</em> (the standup form),
-          not the Events API.
+          Slack verifies both Request URLs when the app is created, so the standup bot must already
+          be deployed and publicly reachable or the manifest is rejected. The manifest sets the four
+          permissions the bot genuinely needs — <Lit>chat:write</Lit>, <Lit>users:read</Lit>,{' '}
+          <Lit>users:read.email</Lit>, <Lit>commands</Lit> — and nothing more.
         </Gotcha>
       </SetupGuide>
 
