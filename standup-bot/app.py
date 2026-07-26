@@ -39,13 +39,17 @@ FLASK_DEBUG = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
 REMINDER_HOUR = int(os.environ.get("REMINDER_HOUR", "9"))
 REMINDER_MINUTE = int(os.environ.get("REMINDER_MINUTE", "30"))
 
-# Slack request signature verification. Without the signing secret anyone who can
-# reach the endpoint could forge Slack requests, so refuse to start in production.
-signature_verifier = SignatureVerifier(SLACK_SIGNING_SECRET) if SLACK_SIGNING_SECRET else None
+# Slack credentials may come from this process's env OR from the org's stored
+# Integrations credentials (resolved at request time by _slack_config below), so
+# a missing env secret is no longer fatal at startup — the admin may simply not
+# have pasted them yet. The guarantee that matters is preserved in the request
+# gate: without a signing secret, Slack requests are REFUSED, never accepted
+# unverified.
 if not SLACK_SIGNING_SECRET and not FLASK_DEBUG:
-    raise SystemExit(
-        "[FATAL] SLACK_SIGNING_SECRET is required. Set it (see .env.example), or set "
-        "FLASK_DEBUG=true for local dev. Refusing to start without Slack request verification."
+    log.warning(
+        "SLACK_SIGNING_SECRET is not set in the environment. Starting anyway — Slack "
+        "requests will be refused with 503 until credentials are saved in the "
+        "Integrations page (or the env var is set)."
     )
 
 app = Flask(__name__)
@@ -56,9 +60,14 @@ def _gate_requests():
     path = request.path
     # Slack endpoints: prove the request genuinely came from Slack.
     if path.startswith("/slack/"):
-        if signature_verifier is None:
-            return None  # dev only — prod refuses to start without the secret
-        if not signature_verifier.is_valid_request(request.get_data(), dict(request.headers)):
+        verifier = get_signature_verifier()
+        if verifier is None:
+            if FLASK_DEBUG:
+                return None  # dev only
+            # No signing secret from env or Integrations — refuse rather than
+            # accept forgeable requests.
+            return jsonify({"error": "Slack is not configured for this deployment"}), 503
+        if not verifier.is_valid_request(request.get_data(), dict(request.headers)):
             return jsonify({"error": "invalid Slack signature"}), 401
         return None
     # Internal server-to-server endpoints (Express → bot). No-op when key unset (dev).
@@ -74,8 +83,101 @@ def _gate_requests():
     return None
 
 
+# ─── Slack credential resolution ─────────────────────────────────────────────
+# Credentials come from the org's Integrations page when present, falling back to
+# this process's env vars. Resolved lazily per request (cached) rather than at
+# import, so pasting them in the UI takes effect without a restart.
+#
+# D6 still holds: ONE deployment serves ONE workspace, bound to ONE org via
+# STANDUP_ORG_ID. This changes only *where the credentials live*, not how many
+# workspaces the bot can serve.
+
+SLACK_CFG_TTL_SECONDS = 60  # paste in the UI → live within a minute
+_slack_cfg_cache = {"data": None, "fetched_at": 0}
+
+
+def _express_base():
+    """Origin of the Express API, tolerating either the full /api/db/standups
+    URL or a bare origin in EXPRESS_DB_URL."""
+    raw = os.environ.get("EXPRESS_BASE_URL") or EXPRESS_DB_URL or ""
+    return raw.split("/api/")[0].rstrip("/")
+
+
+def _slack_config(force=False):
+    """Current Slack config: stored org credentials if available, else env.
+
+    Cached for SLACK_CFG_TTL_SECONDS because slash commands must answer inside
+    Slack's 3-second deadline and this can make a network call.
+    """
+    import time
+    now = time.time()
+    cached = _slack_cfg_cache["data"]
+    if not force and cached and now - _slack_cfg_cache["fetched_at"] < SLACK_CFG_TTL_SECONDS:
+        return cached
+
+    cfg = {
+        "botToken": os.environ.get("SLACK_BOT_TOKEN", ""),
+        "signingSecret": SLACK_SIGNING_SECRET,
+        "analyzerUrl": os.environ.get("STANDUP_ANALYZER_URL", ""),
+        "teamName": None,
+        "source": "env",
+    }
+
+    base = _express_base()
+    if base and STANDUP_ORG_ID:
+        try:
+            r = requests.get(
+                f"{base}/api/internal/slack-config", timeout=3, headers=_express_headers()
+            )
+            if r.ok:
+                data = r.json()
+                # Only take over if BOTH secrets are present — a half-filled
+                # record must not silently disable request verification.
+                if data.get("botToken") and data.get("signingSecret"):
+                    cfg = {
+                        "botToken": data["botToken"],
+                        "signingSecret": data["signingSecret"],
+                        "analyzerUrl": data.get("analyzerUrl") or "",
+                        "teamName": data.get("teamName"),
+                        "source": "integrations",
+                    }
+            elif r.status_code != 404:  # 404 = not connected yet, expected
+                log.warning(f"slack-config returned {r.status_code}; using env")
+        except Exception as e:
+            log.warning(f"slack-config fetch failed, using env: {e}")
+
+    _slack_cfg_cache["data"] = cfg
+    _slack_cfg_cache["fetched_at"] = now
+    return cfg
+
+
+_slack_client_cache = {"token": None, "client": None}
+
+
+def get_slack_client():
+    """WebClient for the currently-configured bot token, rebuilt when it changes."""
+    token = _slack_config().get("botToken") or ""
+    if _slack_client_cache["client"] is None or _slack_client_cache["token"] != token:
+        _slack_client_cache["token"] = token
+        _slack_client_cache["client"] = WebClient(token=token)
+    return _slack_client_cache["client"]
+
+
+_verifier_cache = {"secret": None, "verifier": None}
+
+
+def get_signature_verifier():
+    """SignatureVerifier for the current signing secret, or None if unconfigured."""
+    secret = _slack_config().get("signingSecret") or ""
+    if not secret:
+        return None
+    if _verifier_cache["verifier"] is None or _verifier_cache["secret"] != secret:
+        _verifier_cache["secret"] = secret
+        _verifier_cache["verifier"] = SignatureVerifier(secret)
+    return _verifier_cache["verifier"]
+
+
 # Initialize Clients
-slack_client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
 gemini_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-flash-lite-latest')  # lite alias: free-tier quota + never 404-deprecates
 jira = Jira(
@@ -316,9 +418,10 @@ def save_standup_to_json(user_id, project_key, yesterday, today, blocker, analys
 def send_to_standup_analyzer(standup_entry):
     """Send standup data to analyzer endpoint."""
     try:
-        analyzer_url = os.environ.get("STANDUP_ANALYZER_URL")
+        # Stored Integrations value wins over the env var (same as the Slack creds).
+        analyzer_url = _slack_config().get("analyzerUrl")
         if not analyzer_url:
-            log.warning(f"STANDUP_ANALYZER_URL not configured")
+            log.warning("Standup analyzer URL not configured")
             return
 
         response = requests.post(
@@ -416,7 +519,7 @@ def process_standup_logic(user_id, project_key, yesterday, today, blocker):
         # Get the user's Jira account ID for ownership check
         jira_email = os.environ.get("JIRA_EMAIL")
         try:
-            user_info = slack_client.users_info(user=user_id)
+            user_info = get_slack_client().users_info(user=user_id)
             user_profile = user_info["user"]["profile"]
             user_email = user_profile.get("email", jira_email)
         except Exception:
@@ -472,7 +575,7 @@ def process_standup_logic(user_id, project_key, yesterday, today, blocker):
                 f"- *Details:* {analysis.get('blocker_summary', 'N/A')}"
             )
 
-        slack_client.chat_postMessage(
+        get_slack_client().chat_postMessage(
             channel=user_id,
             text=(
                 f"*Standup Report -- {user_name}*\n"
@@ -500,7 +603,7 @@ def process_standup_logic(user_id, project_key, yesterday, today, blocker):
         import traceback
         log.error(f"Logic Error: {type(e).__name__}: {e}")
         traceback.print_exc()
-        slack_client.chat_postMessage(
+        get_slack_client().chat_postMessage(
             channel=user_id,
             text=f"[WARNING] Standup processing failed: {type(e).__name__}: {e}",
         )
@@ -586,7 +689,7 @@ def _open_standup_modal_async(trigger_id):
     try:
         project_options = get_cached_project_options()
         modal = _build_standup_modal(project_options)
-        slack_client.views_open(trigger_id=trigger_id, view=modal)
+        get_slack_client().views_open(trigger_id=trigger_id, view=modal)
     except Exception as e:
         print(f"[STANDUP] Failed to open modal: {e}")
 
@@ -709,7 +812,7 @@ def _slack_workspace_name():
     if _workspace_cache["name"] and now - _workspace_cache["fetched_at"] < WORKSPACE_TTL_SECONDS:
         return _workspace_cache["name"]
     try:
-        info = slack_client.auth_test()
+        info = get_slack_client().auth_test()
         _workspace_cache["name"] = info.get("team")
         _workspace_cache["fetched_at"] = now
         return _workspace_cache["name"]
@@ -727,16 +830,22 @@ def api_standup_status():
     only — never token material. Behind the internal-key gate with the rest of
     /api/standup/*, so only Express can call it.
     """
-    slack_configured = bool(os.environ.get("SLACK_BOT_TOKEN"))
+    # force=True so the UI reflects a just-saved credential immediately rather
+    # than up to SLACK_CFG_TTL_SECONDS later.
+    cfg = _slack_config(force=True)
+    slack_configured = bool(cfg.get("botToken"))
     return jsonify({
         'success': True,
         'orgId': STANDUP_ORG_ID or None,
         'workspace': _slack_workspace_name() if slack_configured else None,
         'reminder': f"{REMINDER_HOUR:02d}:{REMINDER_MINUTE:02d}",
         'jiraProjectKey': os.environ.get("JIRA_PROJECT_KEY") or None,
+        # 'integrations' = pasted in the UI, 'env' = this process's .env
+        'credentialSource': cfg.get("source"),
         'configured': {
             'slack': slack_configured,
-            'signingSecret': bool(SLACK_SIGNING_SECRET),
+            'signingSecret': bool(cfg.get("signingSecret")),
+            'analyzer': bool(cfg.get("analyzerUrl")),
             'gemini': bool(os.environ.get("GEMINI_API_KEY")),
             'jira': bool(os.environ.get("JIRA_URL") and os.environ.get("JIRA_API_TOKEN")),
             'orgBinding': bool(STANDUP_ORG_ID),
@@ -789,7 +898,7 @@ def api_standup_history():
     for entry in standup_data:
         if entry.get('user_id') and not entry.get('user_name'):
             try:
-                info = slack_client.users_info(user=entry['user_id'])
+                info = get_slack_client().users_info(user=entry['user_id'])
                 entry['user_name'] = info['user']['real_name']
                 entry['avatar'] = info['user']['profile'].get('image_72', '')
             except Exception:
@@ -860,7 +969,7 @@ def check_for_proactive_blockers():
                     status = issue["fields"]["status"]["name"]
 
                     try:
-                        user_info = slack_client.users_lookupByEmail(
+                        user_info = get_slack_client().users_lookupByEmail(
                             email=assignee_email
                         )
                         user_id = user_info["user"]["id"]
@@ -871,7 +980,7 @@ def check_for_proactive_blockers():
                             status=status,
                             project=project_key,
                         )
-                        slack_client.chat_postMessage(
+                        get_slack_client().chat_postMessage(
                             channel=user_id, text=nudge_text
                         )
                         print(
@@ -895,7 +1004,7 @@ def get_all_slack_members():
     """Get all real (non-bot, non-deleted) Slack workspace members."""
     members = []
     try:
-        result = slack_client.users_list()
+        result = get_slack_client().users_list()
         for member in result["members"]:
             if (
                 not member.get("is_bot")
@@ -1044,7 +1153,7 @@ def send_standup_reminder():
         try:
             if first_time:
                 pending_labels = [_format_project(p) for p in sorted(pending)]
-                slack_client.chat_postMessage(
+                get_slack_client().chat_postMessage(
                     channel=uid,
                     text=f"Daily Standup Reminder — pending: {', '.join(pending_labels)}",
                     blocks=_build_digest_blocks(pending),
@@ -1058,7 +1167,7 @@ def send_standup_reminder():
             else:
                 for project_key in sorted(pending):
                     label = _format_project(project_key)
-                    slack_client.chat_postMessage(
+                    get_slack_client().chat_postMessage(
                         channel=uid,
                         text=f"Standup reminder — {label} still pending",
                         blocks=_build_project_nudge_blocks(project_key),
@@ -1106,7 +1215,7 @@ def check_missing_standups():
     )
     for member in missing:
         try:
-            slack_client.chat_postMessage(
+            get_slack_client().chat_postMessage(
                 channel=member["id"],
                 text="Standup follow-up — please submit your standup",  # fallback
                 blocks=blocks,
@@ -1143,7 +1252,7 @@ def test_reminder():
         )
         for member in members:
             try:
-                slack_client.chat_postMessage(
+                get_slack_client().chat_postMessage(
                     channel=member["id"],
                     text="Daily Standup Reminder — submit your standup",
                     blocks=blocks,

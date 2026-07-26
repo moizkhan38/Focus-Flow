@@ -56,9 +56,25 @@ export async function getGithubToken(orgId) {
   return p ? p.token || null : null;
 }
 
+// Slack credentials for the standup bot. Unlike Jira/GitHub these are consumed
+// by a separate Python service, so they leave this process over the
+// internal-key-gated /api/internal/slack-config lane rather than through a
+// client factory here.
+export async function getSlackCredentials(orgId) {
+  const p = await getPayload(orgId, 'slack');
+  if (!p) return null;
+  return {
+    botToken: p.botToken,
+    signingSecret: p.signingSecret,
+    analyzerUrl: p.analyzerUrl || null,
+    teamName: p.teamName || null,
+  };
+}
+
 // Encrypt + upsert + invalidate cache. payloadObj shape:
 //   jira   → { domain, email, apiToken }
 //   github → { token, login }
+//   slack  → { botToken, signingSecret, analyzerUrl?, teamName? }
 export async function setIntegration(orgId, provider, payloadObj) {
   const ciphertext = encryptJson(payloadObj);
   await query(
@@ -84,9 +100,10 @@ export async function deleteIntegration(orgId, provider) {
 // Non-secret connection status for the Settings UI. Domain/email/login are safe
 // to surface; the token is reduced to its last 4 characters.
 export async function getStatus(orgId) {
-  const [jira, github] = await Promise.all([
+  const [jira, github, slack] = await Promise.all([
     getPayload(orgId, 'jira'),
     getPayload(orgId, 'github'),
+    getPayload(orgId, 'slack'),
   ]);
   return {
     jira: jira
@@ -94,6 +111,14 @@ export async function getStatus(orgId) {
       : { connected: false },
     github: github
       ? { connected: true, login: github.login || null, tokenSuffix: (github.token || '').slice(-4) }
+      : { connected: false },
+    slack: slack
+      ? {
+          connected: true,
+          teamName: slack.teamName || null,
+          analyzerUrl: slack.analyzerUrl || null,
+          tokenSuffix: (slack.botToken || '').slice(-4),
+        }
       : { connected: false },
   };
 }

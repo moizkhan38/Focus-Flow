@@ -9,6 +9,7 @@ import {
   deleteIntegration,
   getJiraCredentials,
   getGithubToken,
+  getSlackCredentials,
 } from '../services/credentialProvider.js';
 
 // Per-org integration credentials API (Phase 2, step 2.4).
@@ -62,6 +63,33 @@ async function testJira({ domain, email, apiToken }) {
   return { ok: false, error: parseJiraError(body, res.status) };
 }
 
+// auth.test needs no scope and returns the workspace name — ideal for validating
+// a pasted bot token before we store it.
+async function testSlack({ botToken }) {
+  let res;
+  try {
+    res = await fetch('https://slack.com/api/auth.test', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${botToken}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
+  } catch {
+    return { ok: false, error: 'Could not reach slack.com' };
+  }
+  const body = await res.json().catch(() => ({}));
+  // Slack returns HTTP 200 with { ok: false, error } for bad tokens.
+  if (body.ok) return { ok: true, teamName: body.team || null, botUser: body.user || null };
+  const map = {
+    invalid_auth: 'Slack rejected this bot token.',
+    account_inactive: 'That token belongs to a deactivated workspace or app.',
+    token_revoked: 'This token has been revoked — reinstall the app and copy the new one.',
+    not_authed: 'No token was sent.',
+  };
+  return { ok: false, error: map[body.error] || `Slack responded: ${body.error || 'unknown error'}` };
+}
+
 async function testGithub({ token }) {
   let res;
   try {
@@ -112,16 +140,83 @@ async function fetchBotStatus() {
   }
 }
 
+// PUT /api/integrations/slack — store this org's Slack app credentials (admin only).
+// The org admin creates the Slack app themselves and pastes its bot token and
+// signing secret here; no OAuth install flow is involved (that's Phase 4, and is
+// only needed to serve MANY workspaces from one app).
+router.put('/integrations/slack', requireOrgAdmin, async (req, res) => {
+  try {
+    const botToken = String(req.body?.botToken || '').trim();
+    const signingSecret = String(req.body?.signingSecret || '').trim();
+    const analyzerUrl = String(req.body?.analyzerUrl || '').trim();
+
+    if (!botToken || !signingSecret) {
+      return res.status(400).json({ success: false, error: 'botToken and signingSecret are required' });
+    }
+    if (!botToken.startsWith('xoxb-')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Expected a bot token starting with "xoxb-". Copy the Bot User OAuth Token, not the app or user token.',
+      });
+    }
+    if (analyzerUrl && !/^https?:\/\//i.test(analyzerUrl)) {
+      return res.status(400).json({ success: false, error: 'Analyzer URL must start with http:// or https://' });
+    }
+
+    const test = await testSlack({ botToken });
+    if (!test.ok) return res.status(400).json({ success: false, error: test.error });
+
+    await setIntegration(req.orgId, 'slack', {
+      botToken,
+      signingSecret,
+      analyzerUrl: analyzerUrl || null,
+      teamName: test.teamName,
+    });
+    return res.json({ success: true, teamName: test.teamName });
+  } catch (err) {
+    return sendServerError(res, err);
+  }
+});
+
+// GET /api/internal/slack-config — the bot fetching its own credentials.
+// Internal key only (see the gate in server.js); a Clerk session cannot reach it.
+//
+// TRADE-OFF, made deliberately: this hands decrypted secrets to the Python bot
+// over HTTP, because credentialProvider is Node and the bot is Python. It is
+// mitigated by the internal-key gate and by the bot never being exposed publicly
+// (no published port in docker-compose; backend and bot share an internal
+// network). The alternative — a second copy of the crypto in Python — means two
+// implementations of the envelope and two places holding the master key.
+router.get('/internal/slack-config', async (req, res) => {
+  try {
+    if (!req.orgId) {
+      return res.status(400).json({ success: false, error: 'X-Org-Id header is required' });
+    }
+    const creds = await getSlackCredentials(req.orgId);
+    if (!creds) return res.status(404).json({ success: false, error: 'SLACK_NOT_CONNECTED' });
+    return res.json({
+      success: true,
+      botToken: creds.botToken,
+      signingSecret: creds.signingSecret,
+      analyzerUrl: creds.analyzerUrl,
+      teamName: creds.teamName,
+    });
+  } catch (err) {
+    return sendServerError(res, err);
+  }
+});
+
 // GET /api/integrations/slack — standup bot status for this org (any member).
 router.get('/integrations/slack', async (req, res) => {
   try {
-    const [bot, counts] = await Promise.all([
+    const [bot, counts, stored] = await Promise.all([
       fetchBotStatus(),
       query(
         `SELECT COUNT(*)::int AS total, MAX(timestamp) AS last_at
            FROM standups WHERE org_id = $1`,
         [req.orgId]
       ).then((r) => r.rows[0]).catch(() => ({ total: 0, last_at: null })),
+      getStatus(req.orgId).then((s) => s.slack).catch(() => ({ connected: false })),
     ]);
 
     // "Bound to this org" is what decides whether standups submitted in Slack
@@ -131,6 +226,12 @@ router.get('/integrations/slack', async (req, res) => {
     res.json({
       success: true,
       slack: {
+        // Credentials saved here, independent of whether the bot is running.
+        credentialsStored: !!stored.connected,
+        teamName: stored.teamName || null,
+        analyzerUrl: stored.analyzerUrl || null,
+        tokenSuffix: stored.tokenSuffix || null,
+
         reachable: bot.reachable,
         authorized: bot.authorized !== false,
         connected: !!(bot.reachable && bot.authorized !== false && bot.configured?.slack),
@@ -140,6 +241,9 @@ router.get('/integrations/slack', async (req, res) => {
         reminder: bot.reminder || null,
         jiraProjectKey: bot.jiraProjectKey || null,
         configured: bot.configured || null,
+        // 'integrations' = the bot picked up what was pasted here; 'env' = it is
+        // still running on its own .env values.
+        credentialSource: bot.credentialSource || null,
         error: bot.error || null,
         standupCount: counts.total || 0,
         lastStandupAt: counts.last_at || null,
@@ -210,7 +314,7 @@ router.put('/integrations/github', requireOrgAdmin, async (req, res) => {
 router.delete('/integrations/:provider', requireOrgAdmin, async (req, res) => {
   try {
     const { provider } = req.params;
-    if (provider !== 'jira' && provider !== 'github') {
+    if (!['jira', 'github', 'slack'].includes(provider)) {
       return res.status(400).json({ success: false, error: 'Unknown provider' });
     }
     await deleteIntegration(req.orgId, provider);
@@ -235,6 +339,16 @@ router.post('/integrations/:provider/test', requireOrgAdmin, async (req, res) =>
       if (!token) return res.status(400).json({ success: false, error: 'GITHUB_NOT_CONNECTED' });
       const test = await testGithub({ token });
       return res.json({ success: true, ok: test.ok, ...(test.ok ? {} : { error: test.error }) });
+    }
+    if (provider === 'slack') {
+      const creds = await getSlackCredentials(req.orgId);
+      if (!creds) return res.status(400).json({ success: false, error: 'SLACK_NOT_CONNECTED' });
+      const test = await testSlack({ botToken: creds.botToken });
+      return res.json({
+        success: true,
+        ok: test.ok,
+        ...(test.ok ? { teamName: test.teamName } : { error: test.error }),
+      });
     }
     return res.status(400).json({ success: false, error: 'Unknown provider' });
   } catch (err) {

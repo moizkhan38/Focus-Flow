@@ -43,3 +43,15 @@ export function orgOrInternal(req, res, next) {
   }
   return requireOrg(req, res, next);
 }
+
+// Internal lane ONLY — no Clerk fallback. For routes that hand decrypted
+// credentials to a trusted server-side service (the bot fetching its Slack
+// config). A signed-in user, org admin or not, must never reach these.
+export function requireInternal(req, res, next) {
+  if (!validInternalKey(req)) {
+    return res.status(401).json({ success: false, error: 'UNAUTHENTICATED' });
+  }
+  req.internal = true;
+  req.orgId = req.get('X-Org-Id') || null;
+  return next();
+}

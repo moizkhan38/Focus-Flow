@@ -62,7 +62,7 @@ export default function Settings() {
           <GithubCard status={github} isAdmin={isAdmin} isLoading={isLoading} onChange={mutate} />
         </motion.div>
         <motion.div variants={cardVariants}>
-          <SlackCard status={slack} isLoading={slackLoading} onRefresh={refreshSlack} />
+          <SlackCard status={slack} isAdmin={isAdmin} isLoading={slackLoading} onRefresh={refreshSlack} />
         </motion.div>
       </motion.div>
     </div>
@@ -454,16 +454,79 @@ function CheckRow({ ok, label, detail }) {
   );
 }
 
-function SlackCard({ status, isLoading, onRefresh }) {
+function SlackCard({ status, isAdmin, isLoading, onRefresh }) {
+  const { notify } = useNotifications();
+  const [botToken, setBotToken] = useState('');
+  const [signingSecret, setSigningSecret] = useState('');
+  const [analyzerUrl, setAnalyzerUrl] = useState('');
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState('');
+
   const cfg = status?.configured;
   const lastAt = status?.lastStandupAt ? new Date(status.lastStandupAt) : null;
+  const stored = !!status?.credentialsStored;
+
+  const handleConnect = async () => {
+    setError('');
+    setBusy('connect');
+    try {
+      const r = await apiJson('/api/integrations/slack', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          botToken: botToken.trim(),
+          signingSecret: signingSecret.trim(),
+          analyzerUrl: analyzerUrl.trim(),
+        }),
+      });
+      setBotToken(''); setSigningSecret(''); setAnalyzerUrl('');
+      await onRefresh();
+      notify.success(
+        'Slack connected',
+        r.teamName ? `Workspace "${r.teamName}" saved.` : 'Credentials saved.'
+      );
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleTest = async () => {
+    setError('');
+    setBusy('test');
+    try {
+      const r = await apiJson('/api/integrations/slack/test', { method: 'POST' });
+      if (r.ok) notify.success('Slack connection OK', r.teamName ? `Authenticated to "${r.teamName}".` : 'Token is valid.');
+      else setError(r.error || 'Slack rejected the stored token.');
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!window.confirm('Disconnect Slack? The standup bot falls back to its own env vars, and stops working if it has none.')) return;
+    setError('');
+    setBusy('disconnect');
+    try {
+      await apiJson('/api/integrations/slack', { method: 'DELETE' });
+      await onRefresh();
+      notify.success('Slack disconnected', 'Credentials removed from this organization.');
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
     <IntegrationCard
       icon={MessageSquare}
       title="Slack — Standup Bot"
       subtitle="Collects daily standups via /standup and surfaces them on the dashboard."
-      status={{ connected: status?.connected }}
+      status={{ connected: stored }}
       isLoading={isLoading}
     >
       {isLoading && (
@@ -544,33 +607,134 @@ function SlackCard({ status, isLoading, onRefresh }) {
         </>
       )}
 
-      <div className="flex items-start gap-2 rounded-lg border border-default p-3">
-        <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-        <p className="text-xs text-muted">
-          This workspace is configured on the server, not from here — Slack requires an
-          OAuth install rather than a pasted token, so per-organization connection is a
-          later phase. Set the bot's environment variables and restart it to change any
-          of the above.
+      {stored && (
+        <p className="mb-4 text-sm text-muted">
+          Connected to <span className="font-medium text-heading">{status.teamName || 'your workspace'}</span>
+          {status.tokenSuffix && (
+            <> · token ending <span className="font-mono text-heading">…{status.tokenSuffix}</span></>
+          )}
         </p>
-      </div>
+      )}
 
-      <div className="flex flex-wrap items-center gap-2 pt-3">
-        <button
-          onClick={onRefresh}
-          disabled={isLoading}
-          className="inline-flex items-center gap-2 rounded-lg border border-default px-3.5 py-2 text-sm font-medium text-heading hover:bg-gray-50 disabled:opacity-50"
+      <div className="space-y-3 mb-4">
+        <Field
+          label="Bot User OAuth Token"
+          hint={stored ? 'Stored securely — enter a new token only to replace it.' : 'OAuth & Permissions → Bot User OAuth Token. Starts with xoxb-.'}
         >
-          <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          Re-check
-        </button>
+          <input
+            className={inputCls}
+            type="password"
+            value={botToken}
+            onChange={(e) => setBotToken(e.target.value)}
+            placeholder={stored ? '••••••••••••' : 'xoxb-…'}
+            disabled={!isAdmin || !!busy}
+            autoComplete="off"
+          />
+        </Field>
+
+        <Field
+          label="Signing secret"
+          hint="Basic Information → App Credentials → Signing Secret. Used to verify requests genuinely come from Slack."
+        >
+          <input
+            className={inputCls}
+            type="password"
+            value={signingSecret}
+            onChange={(e) => setSigningSecret(e.target.value)}
+            placeholder={stored ? '••••••••••••' : 'Paste your signing secret'}
+            disabled={!isAdmin || !!busy}
+            autoComplete="off"
+          />
+        </Field>
+
+        <Field
+          label="Standup analyzer URL"
+          hint="Optional webhook each standup is forwarded to after analysis."
+        >
+          <input
+            className={inputCls}
+            type="url"
+            value={analyzerUrl}
+            onChange={(e) => setAnalyzerUrl(e.target.value)}
+            placeholder={status?.analyzerUrl || 'https://example.com/analyze (optional)'}
+            disabled={!isAdmin || !!busy}
+          />
+        </Field>
+
         <a
           href="https://api.slack.com/apps"
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
         >
-          Slack app settings <ExternalLink className="w-3 h-3" />
+          Open Slack app settings <ExternalLink className="w-3 h-3" />
         </a>
+      </div>
+
+      {/* Saved credentials only take effect once the bot fetches them. Say so,
+          rather than letting "Connected" imply standups are flowing. */}
+      {stored && status?.reachable && status?.credentialSource === 'env' && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+          <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+          <p className="text-xs text-muted">
+            Saved here, but the bot is still using its own environment variables. It
+            re-checks about once a minute — use Re-check below, or restart the bot.
+          </p>
+        </div>
+      )}
+
+      <div className="flex items-start gap-2 rounded-lg border border-default p-3">
+        <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+        <p className="text-xs text-muted">
+          Create the Slack app in your own workspace first, then paste its credentials
+          here. Point the <span className="font-mono">/standup</span> command at{' '}
+          <span className="font-mono">/slack/command</span> and Interactivity at{' '}
+          <span className="font-mono">/slack/events</span> on the bot's public URL.
+        </p>
+      </div>
+
+      <div className="space-y-3 pt-3">
+        <CardError message={error} />
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleConnect}
+            disabled={!isAdmin || !!busy || !botToken.trim() || !signingSecret.trim()}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {busy === 'connect' && <Loader2 className="w-4 h-4 animate-spin" />}
+            {stored ? 'Update credentials' : 'Connect Slack'}
+          </button>
+
+          {stored && (
+            <>
+              <button
+                onClick={handleTest}
+                disabled={!isAdmin || !!busy}
+                className="inline-flex items-center gap-2 rounded-lg border border-default px-3.5 py-2 text-sm font-medium text-heading hover:bg-gray-50 disabled:opacity-50"
+              >
+                {busy === 'test' && <Loader2 className="w-4 h-4 animate-spin" />}
+                Test connection
+              </button>
+              <button
+                onClick={handleDisconnect}
+                disabled={!isAdmin || !!busy}
+                className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 px-3.5 py-2 text-sm font-medium text-red-600 hover:bg-red-500/10 disabled:opacity-50"
+              >
+                {busy === 'disconnect' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Disconnect
+              </button>
+            </>
+          )}
+
+          <button
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="inline-flex items-center gap-2 rounded-lg border border-default px-3.5 py-2 text-sm font-medium text-heading hover:bg-gray-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Re-check
+          </button>
+        </div>
       </div>
     </IntegrationCard>
   );

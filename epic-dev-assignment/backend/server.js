@@ -7,7 +7,7 @@ import rateLimit from 'express-rate-limit';
 import { clerkMiddleware } from '@clerk/express';
 import { verifyToken } from '@clerk/backend';
 import { Server as SocketIOServer } from 'socket.io';
-import { requireOrg, orgOrInternal } from './middleware/auth.js';
+import { requireOrg, orgOrInternal, requireInternal } from './middleware/auth.js';
 import { refreshAllDevelopers } from './services/developerRefresher.js';
 import epicsRouter from './routes/epics.js';
 import developersRouter from './routes/developers.js';
@@ -108,6 +108,9 @@ app.use('/api', rateLimit({
 app.use('/api', (req, res, next) => {
   if (req.path === '/health' || req.path === '/db/health') return next(); // open probes
   if (req.path === '/db/standups') return orgOrInternal(req, res, next);  // bot's internal lane
+  // Hands decrypted Slack credentials to the bot — internal key ONLY, never a
+  // Clerk session (requireInternal has no user fallback).
+  if (req.path === '/internal/slack-config') return requireInternal(req, res, next);
   return requireOrg(req, res, next);
 });
 
