@@ -25,8 +25,14 @@ import { getSlackCredentials, getJiraCredentials } from '../services/credentialP
 const router = express.Router();
 
 // GET /api/internal/slack-config — Slack bot token, signing secret, analyzer URL.
-router.get('/internal/slack-config', async (req, res) => {
+router.get('/slack-config', async (req, res) => {
   try {
+    // requireInternal is attached at the mount in server.js. This second check
+    // makes the handler refuse on its own if that mount is ever changed, so a
+    // routing mistake cannot silently expose credentials again.
+    if (!req.internal) {
+      return res.status(401).json({ success: false, error: 'INTERNAL_AUTH_REQUIRED' });
+    }
     if (!req.orgId) {
       return res.status(400).json({ success: false, error: 'X-Org-Id header is required' });
     }
@@ -49,8 +55,14 @@ router.get('/internal/slack-config', async (req, res) => {
 // Without this the bot and the app can point at different Atlassian sites: the
 // app creates projects in the org's Jira while the bot lists projects from its
 // own env, so newly created projects never appear in the /standup picker.
-router.get('/internal/jira-config', async (req, res) => {
+router.get('/jira-config', async (req, res) => {
   try {
+    // requireInternal is attached at the mount in server.js. This second check
+    // makes the handler refuse on its own if that mount is ever changed, so a
+    // routing mistake cannot silently expose credentials again.
+    if (!req.internal) {
+      return res.status(401).json({ success: false, error: 'INTERNAL_AUTH_REQUIRED' });
+    }
     if (!req.orgId) {
       return res.status(400).json({ success: false, error: 'X-Org-Id header is required' });
     }

@@ -2,6 +2,7 @@ import 'dotenv/config';
 import http from 'node:http';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import cron from 'node-cron';
 import rateLimit from 'express-rate-limit';
 import { clerkMiddleware } from '@clerk/express';
@@ -47,6 +48,23 @@ app.set('trust proxy', Number(process.env.TRUST_PROXY || 0));
 // Structured request logging first: assigns/propagates X-Request-Id and attaches
 // a per-request child logger at req.log so a request's lines all share one id.
 app.use(httpLogger);
+
+// Security response headers. Two defaults are deliberately overridden because
+// this service is a cross-origin JSON API, not an HTML site:
+//
+//   crossOriginResourcePolicy — helmet defaults to 'same-origin', which would
+//     make the browser DISCARD every response to the frontend, since the SPA is
+//     served from a different origin (Vercel) than this API (Railway).
+//   contentSecurityPolicy — this service returns JSON only, so a CSP here
+//     protects nothing; the frontend host sets its own for the HTML it serves.
+//
+// What remains is what actually matters for an API: HSTS, nosniff, frame-deny,
+// a conservative Referrer-Policy, and removal of X-Powered-By.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  crossOriginEmbedderPolicy: false,
+}));
 
 // CORS restricted to known origins (no wildcard). A disallowed browser origin gets
 // no CORS headers via cb(null, false) rather than a thrown error (which would 500).
@@ -98,6 +116,20 @@ app.use('/api', rateLimit({
   legacyHeaders: false,
 }));
 
+// ── Internal service lane ────────────────────────────────────────────────────
+// Mounted BEFORE the /api gate, with requireInternal attached to the SAME
+// matcher that dispatches the routes.
+//
+// It used to be allowlisted inside the gate by `req.path === '/internal/...'`.
+// That was exploitable: Express routers match case-insensitively and tolerate a
+// trailing slash, so '/api/internal/jira-config/' and '/api/Internal/jira-config'
+// missed the exact string compare, fell through to requireOrg — which passes for
+// ANY signed-in org member — and still reached the handler, returning the org's
+// decrypted Jira and Slack credentials. Authorizing by string-comparing a path
+// only works if the comparison normalizes exactly like the router does; binding
+// the guard to the mount removes that entire class of drift.
+app.use('/api/internal', requireInternal, internalRouter);
+
 // ── Default-closed auth gate ─────────────────────────────────────────────────
 // ONE gate for the whole flat /api namespace. Everything requires a signed-in
 // user with an active org EXCEPT the explicit allowlist below. Default-closed:
@@ -109,11 +141,7 @@ app.use('/api', rateLimit({
 app.use('/api', (req, res, next) => {
   if (req.path === '/health' || req.path === '/db/health') return next(); // open probes
   if (req.path === '/db/standups') return orgOrInternal(req, res, next);  // bot's internal lane
-  // Hands decrypted Slack credentials to the bot — internal key ONLY, never a
-  // Clerk session (requireInternal has no user fallback).
-  if (req.path === '/internal/slack-config' || req.path === '/internal/jira-config') {
-    return requireInternal(req, res, next);
-  }
+  // /api/internal/* is handled above, before this gate, with its own guard.
   return requireOrg(req, res, next);
 });
 
@@ -124,7 +152,6 @@ app.use('/api', (req, res, next) => {
 // it without a Clerk session is rejected there, before any later router sees
 // it. Mounting the bot's internal lane ahead of them is what keeps that from
 // happening — moving it down breaks the bot with a 401 that reads like a bad key.
-app.use('/api', internalRouter);
 app.use('/api', epicsRouter);
 app.use('/api', developersRouter);
 app.use('/api', assignmentRouter);
