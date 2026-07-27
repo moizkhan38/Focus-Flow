@@ -110,9 +110,47 @@ async function resolveEntitlement(req) {
     }
   }
 
+  warnIfNoSlugRecognised(orgId, plan, features);
+
   const entitlement = { at: Date.now(), plan, features };
   entitlementCache.set(orgId, entitlement);
   return entitlement;
+}
+
+// Misspelled feature slugs fail CLOSED — the customer pays and receives nothing,
+// which is the worst way for this to be wrong and the hardest to notice, because
+// the app behaves like a perfectly ordinary free account.
+//
+// Clerk generates a feature's key from its NAME, so a plan built with readable
+// labels produces keys like `slack_standup_bot` or `25_team_members` that look
+// right and match nothing. Holding features while recognising none of them is the
+// signature of exactly that, so say so loudly rather than silently downgrading.
+const KNOWN_SLUG_RE = /^(jira_sync|standup_bot|unlimited_projects|unlimited_ai|members_(\d+|unlimited))$/;
+
+// A free plan legitimately carries descriptive-only features — "2 projects
+// allowed", "5 team members allowed" — purely so the Free column of
+// <PricingTable /> reads well. Those match nothing by design, so warning about
+// them would fire on every request for every free org and train the reader to
+// ignore the one warning that matters.
+const FREE_PLAN_RE = /free/i;
+
+const warnedOrgs = new Set();
+
+function warnIfNoSlugRecognised(orgId, plan, features) {
+  if (features.size === 0) return;                       // nothing to match
+  if (FREE_PLAN_RE.test(plan || '')) return;             // marketing copy on a free plan
+  if ([...features].some((f) => KNOWN_SLUG_RE.test(f))) return;
+  if (warnedOrgs.has(orgId)) return;                     // once per process, not per request
+  warnedOrgs.add(orgId);
+  logger.warn(
+    { orgId, plan, features: [...features] },
+    '[Billing] This org is on a paid plan but NONE of its features match a known ' +
+    'slug, so it is being treated as free — the customer is paying for nothing. ' +
+    'Fix the feature KEYS on this plan in the Clerk dashboard: they must be exactly ' +
+    'jira_sync, standup_bot, unlimited_projects, unlimited_ai, members_<n>. Clerk ' +
+    'derives a feature key from its NAME, so a label like "Slack standup bot" ' +
+    'yields slack_standup_bot, which matches nothing.'
+  );
 }
 
 // Clerk encodes list claims as either an array or a comma-separated string, and

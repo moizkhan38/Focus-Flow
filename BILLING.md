@@ -50,7 +50,32 @@ can rename or repackage plans later without touching code.
 | `unlimited_ai` | Removes the monthly AI generation cap |
 | `members_25` | Raises the team-member cap to 25 |
 
-These go on the **paid** plan only. The Free plan stays empty — see below.
+These go on the **paid** plan only.
+
+> ### The KEY is what the code reads, never the Name
+>
+> Clerk derives a feature's key from its **name**, and the derived key is usually
+> wrong for us. "Slack standup bot" becomes `slack_standup_bot`; "25 team members"
+> becomes `25_team_members`. Neither matches, so **the customer pays and receives
+> nothing** — the app behaves like an ordinary free account, which is both the
+> worst way for this to be wrong and the hardest to notice.
+>
+> Set each feature's **Key** explicitly to the slug in the table above. Name them
+> however reads well on the pricing table.
+>
+> The backend logs a loud warning if an org is on a paid plan and *none* of its
+> features are recognised — the signature of exactly this mistake.
+
+### Descriptive features on the Free plan are fine
+
+Adding labels like "2 projects allowed", "5 team members allowed" or "Limited AI
+quota" to the Free plan is a good idea: they make the Free column of
+`<PricingTable />` readable. They grant nothing, which is exactly right, and the
+no-recognised-slug warning is suppressed for free plans so it does not cry wolf.
+
+Note that `5 team members allowed` → `5_team_members_allowed` does **not** satisfy
+`members_<n>`; the slug pattern is anchored so a label can never be read as an
+allowance. Covered by tests.
 
 ### Tiered numbers live in the slug
 

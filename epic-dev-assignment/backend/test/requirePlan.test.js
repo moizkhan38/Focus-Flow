@@ -283,6 +283,40 @@ test('a mid-tier plan gets exactly its own features, not a cumulative ladder', a
   assert.equal((await run(requireFeature(billing.FEATURES.STANDUP_BOT), basic)).code, 402);
 });
 
+test('descriptive-only features on the Free plan grant nothing', async () => {
+  // A free plan legitimately carries labels like "2 projects allowed" purely so
+  // the Free column of <PricingTable /> reads well. They must never be mistaken
+  // for entitlement — note "5 team members allowed" must NOT satisfy members_<n>.
+  developerCount = 1;
+  const req = {
+    orgId: 'org_free_labels',
+    auth: { sessionClaims: {
+      pla: 'o:free_org',
+      fea: 'o:2_projects_allowed,o:liimited_ai_quota,o:5_team_members_allowed',
+    } },
+  };
+  const status = await billing.billingStatus(req);
+  assert.equal(status.isPaid, false);
+  assert.equal(status.usage.projects.limit, billing.FREE_LIMITS.projects);
+  assert.equal(status.usage.developers.limit, billing.FREE_LIMITS.developers);
+  assert.equal(status.usage.aiGenerations.limit, billing.FREE_LIMITS.aiGenerationsPerMonth);
+  assert.equal((await run(requireFeature(billing.FEATURES.JIRA_SYNC), req)).code, 402);
+});
+
+test('a members-like LABEL does not satisfy the members_<n> cap', async () => {
+  // "5 team members allowed" -> 5_team_members_allowed. The slug regex is
+  // anchored precisely so a descriptive key cannot be read as an allowance.
+  developerCount = billing.FREE_LIMITS.developers;
+  const req = {
+    orgId: 'org_label_members',
+    body: { username: 'newdev' },
+    auth: { sessionClaims: { fea: 'o:25_team_members,o:team_members_25' } },
+  };
+  const r = await run(requireDeveloperQuota, req);
+  assert.equal(r.code, 402);
+  assert.equal(r.limit, billing.FREE_LIMITS.developers, 'must not read 25 out of a label');
+});
+
 test('an org SUBSCRIBED to Clerk\'s empty Free plan gets the free tier', async () => {
   // Clerk creates a default Free plan carrying no features. That is a different
   // state from "no subscription" — the token says pla: free — and both must land
