@@ -46,8 +46,21 @@ can rename or repackage plans later without touching code.
 |---|---|
 | `jira_sync` | Jira sync, live boards, sprints, burndown, kanban writes |
 | `standup_bot` | Connecting the Slack standup bot |
-| `unlimited_projects` | Removes the project **and** team-member caps |
+| `unlimited_projects` | Removes the project cap |
 | `unlimited_ai` | Removes the monthly AI generation cap |
+| `members_10` | Raises the team-member cap to 10 |
+| `members_25` | Raises the team-member cap to 25 |
+
+### Tiered numbers live in the slug
+
+Clerk features are booleans, but the team-member cap differs per tier (5 free,
+10 Basic, 25 Pro). Rather than mapping plan keys to numbers in code — which would
+make the plan key load-bearing, the exact coupling everything else here avoids —
+**the number is carried in the slug**: `members_<n>`, or `members_unlimited`.
+
+The highest slug an org holds wins, and one below the free allowance is ignored,
+so a plan can carry several harmlessly. Adding a `members_100` tier later is
+dashboard-only: no code change, no deploy.
 
 ## 3. Create the plans
 
@@ -65,13 +78,26 @@ AI tool usable without limits; **Pro** connects it to the team's actual stack.
 
 | Plan | Key | Price | Features |
 |---|---|---|---|
-| Basic | `basic` | e.g. $10/mo | `unlimited_ai`, `unlimited_projects` |
-| Pro | `pro` | e.g. $29/mo | all four — adds `jira_sync`, `standup_bot` |
+| Basic | `basic` | e.g. $10/mo | `unlimited_ai`, `unlimited_projects`, `members_10` |
+| Pro | `pro` | e.g. $29/mo | the above **plus** `jira_sync`, `standup_bot`, `members_25` |
 
-Pro must list **all four** slugs, not just the two Basic lacks: entitlement is the
-set of features on the subscribed plan, not a cumulative ladder. A Pro plan
-carrying only `jira_sync` and `standup_bot` would re-impose the project and AI
-caps on your most expensive customers.
+Pro must list **every** slug it should grant, not just the ones Basic lacks:
+entitlement is the feature set of the subscribed plan, not a cumulative ladder. A
+Pro plan carrying only `jira_sync`, `standup_bot` and `members_25` would re-impose
+the project and AI caps on your most expensive customers.
+
+Give Pro `members_25` **and** leave Basic on `members_10` — do not put both slugs
+on one plan expecting them to add up. They don't; the highest simply wins.
+
+Resulting tiers:
+
+| | Free (no subscription) | Basic | Pro |
+|---|---|---|---|
+| Projects | 2 | unlimited | unlimited |
+| Team members | 5 | 10 | 25 |
+| AI generations | 20/month | unlimited | unlimited |
+| Jira sync + boards | — | — | ✓ |
+| Slack standup bot | — | — | ✓ |
 
 Leave **Publicly available** ON for both. Switched off, a plan is hidden from
 `<PricingTable />` — the billing page renders empty and nobody can subscribe.

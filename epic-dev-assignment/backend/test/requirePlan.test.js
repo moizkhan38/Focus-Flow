@@ -147,6 +147,66 @@ test('a free org is refused the team member over its limit', async () => {
   developerCount = billing.FREE_LIMITS.developers;
   const r = await run(requireDeveloperQuota, reqFor({ body: { username: 'newdev' } }));
   assert.equal(r.code, 402);
+  assert.equal(r.limit, billing.FREE_LIMITS.developers);
+});
+
+// Member caps are TIERED, so they are carried as members_<n> feature slugs
+// rather than a boolean. The number in the slug is the cap; highest one wins.
+function withFeatures(fea) {
+  return { orgId: `org_m_${orgSeq++}`, body: { username: 'newdev' }, auth: { sessionClaims: { fea } } };
+}
+
+test('Basic (members_10) allows 10 team members and refuses the 11th', async () => {
+  developerCount = 9;
+  assert.equal((await run(requireDeveloperQuota, withFeatures('o:members_10'))).code, 200);
+  developerCount = 10;
+  const r = await run(requireDeveloperQuota, withFeatures('o:members_10'));
+  assert.equal(r.code, 402);
+  assert.equal(r.limit, 10);
+  assert.equal(r.used, 10);
+});
+
+test('Pro (members_25) allows 25 team members and refuses the 26th', async () => {
+  developerCount = 24;
+  assert.equal((await run(requireDeveloperQuota, withFeatures('o:members_25'))).code, 200);
+  developerCount = 25;
+  const r = await run(requireDeveloperQuota, withFeatures('o:members_25'));
+  assert.equal(r.code, 402);
+  assert.equal(r.limit, 25);
+});
+
+test('the highest members_<n> wins when a plan carries several', async () => {
+  developerCount = 20;
+  const r = await run(requireDeveloperQuota, withFeatures('o:members_10,o:members_25'));
+  assert.equal(r.code, 200, 'must not be capped at the lower slug');
+});
+
+test('members_unlimited removes the cap entirely', async () => {
+  developerCount = 5000;
+  assert.equal((await run(requireDeveloperQuota, withFeatures('o:members_unlimited'))).code, 200);
+});
+
+test('a members_<n> slug never lowers the cap below the free allowance', async () => {
+  // A misconfigured members_1 must not leave a paying org worse off than free.
+  developerCount = billing.FREE_LIMITS.developers - 1;
+  assert.equal((await run(requireDeveloperQuota, withFeatures('o:members_1'))).code, 200);
+});
+
+test('unlimited_projects no longer silently lifts the member cap', async () => {
+  // The two shared a feature before members were tiered. If they still shared it,
+  // Basic would get unlimited members instead of 10.
+  developerCount = billing.FREE_LIMITS.developers;
+  const r = await run(requireDeveloperQuota, withFeatures('o:unlimited_projects'));
+  assert.equal(r.code, 402);
+  assert.equal(r.limit, billing.FREE_LIMITS.developers);
+});
+
+test('member allowance is reported in billing status', async () => {
+  developerCount = 3;
+  const basic = { orgId: 'org_status_basic', auth: { sessionClaims: { fea: 'o:members_10,o:unlimited_ai' } } };
+  const status = await billing.billingStatus(basic);
+  assert.equal(status.usage.developers.limit, 10);
+  assert.equal(status.isPaid, true, 'a raised member cap alone counts as paid');
 });
 
 test('an at-limit free org can still update an existing team member', async () => {

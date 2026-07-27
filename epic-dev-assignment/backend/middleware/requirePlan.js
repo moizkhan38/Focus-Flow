@@ -1,6 +1,6 @@
 import {
   FEATURES, METRICS, FREE_LIMITS,
-  hasFeature, getUsage, countProjects, countDevelopers,
+  hasFeature, getUsage, countProjects, countDevelopers, memberLimit,
 } from '../services/billing.js';
 import { query } from '../db.js';
 
@@ -98,9 +98,14 @@ export async function requireProjectQuota(req, res, next) {
 }
 
 // Gate on the developer-roster allowance, same "only new ones count" rule.
+//
+// Unlike the other quotas this one is TIERED rather than on/off — free 5,
+// Basic 10, Pro 25 — so it reads a number from the org's members_<n> feature
+// rather than asking whether some boolean feature is present.
 export async function requireDeveloperQuota(req, res, next) {
   try {
-    if (await hasFeature(req, FEATURES.UNLIMITED_PROJECTS)) return next();
+    const limit = await memberLimit(req);
+    if (limit === null) return next(); // members_unlimited
 
     const username = req.body?.username;
     if (username) {
@@ -111,15 +116,14 @@ export async function requireDeveloperQuota(req, res, next) {
     }
 
     const used = await countDevelopers(req.orgId);
-    const limit = FREE_LIMITS.developers;
     if (used >= limit) {
       return upgradeRequired(res, {
-        feature: FEATURES.UNLIMITED_PROJECTS,
+        feature: 'team_members',
         limit,
         used,
         message:
-          `Your plan includes ${limit} team members and you have ${used}. ` +
-          'Upgrade to add more.',
+          `Your plan includes ${limit} team member${limit === 1 ? '' : 's'} and you have ${used}. ` +
+          'A higher plan allows more.',
       });
     }
     return next();

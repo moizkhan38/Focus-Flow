@@ -25,6 +25,27 @@ export const FEATURES = {
   UNLIMITED_AI: 'unlimited_ai',
 };
 
+// Numeric allowances that DIFFER per tier (Basic 10 members, Pro 25) can't be
+// expressed as booleans, and Clerk features are booleans.
+//
+// Rather than mapping plan keys to numbers in code — which would make the plan
+// key load-bearing, the exact coupling every other gate here avoids — the number
+// is carried in the slug: `members_10`, `members_25`, `members_unlimited`. The
+// highest one an org holds wins, so a plan may carry several without harm, and
+// adding a `members_100` tier is dashboard-only with no deploy.
+const MEMBERS_SLUG_RE = /^members_(\d+)$/;
+const MEMBERS_UNLIMITED = 'members_unlimited';
+
+function memberLimitFrom(features) {
+  if (features.has(MEMBERS_UNLIMITED)) return null; // null = unlimited
+  let limit = FREE_LIMITS.developers;
+  for (const f of features) {
+    const m = MEMBERS_SLUG_RE.exec(f);
+    if (m) limit = Math.max(limit, Number(m[1]));
+  }
+  return limit;
+}
+
 // Metric keys for org_usage.
 export const METRICS = { AI_GENERATIONS: 'ai_generations' };
 
@@ -131,6 +152,15 @@ export async function currentPlan(req) {
   return plan || 'free';
 }
 
+// How many developers this org may hold. null = unlimited.
+// Separate from UNLIMITED_PROJECTS, which now governs projects only: the two
+// used to share a feature, which stops working the moment members are tiered
+// (10 on Basic, 25 on Pro) while projects stay unlimited on both.
+export async function memberLimit(req) {
+  const { features } = await resolveEntitlement(req);
+  return memberLimitFrom(features);
+}
+
 // ─── metering ───────────────────────────────────────────────────────────────
 
 function periodStart(date = new Date()) {
@@ -181,12 +211,13 @@ export async function countDevelopers(orgId) {
 
 export async function billingStatus(req) {
   const orgId = req.orgId;
-  const [plan, jiraSync, standupBot, unlimitedProjects, unlimitedAi] = await Promise.all([
+  const [plan, jiraSync, standupBot, unlimitedProjects, unlimitedAi, members] = await Promise.all([
     currentPlan(req),
     hasFeature(req, FEATURES.JIRA_SYNC),
     hasFeature(req, FEATURES.STANDUP_BOT),
     hasFeature(req, FEATURES.UNLIMITED_PROJECTS),
     hasFeature(req, FEATURES.UNLIMITED_AI),
+    memberLimit(req),
   ]);
 
   const [projects, developers, aiUsed] = await Promise.all([
@@ -205,7 +236,10 @@ export async function billingStatus(req) {
     // off the key would mislabel a real customer the moment someone renamed a
     // plan in the dashboard, which is exactly the coupling the rest of this file
     // avoids by gating on features.
-    isPaid: [jiraSync, standupBot, unlimitedProjects, unlimitedAi].some(Boolean),
+    isPaid: [
+      jiraSync, standupBot, unlimitedProjects, unlimitedAi,
+      members === null || members > FREE_LIMITS.developers,
+    ].some(Boolean),
     features: {
       [FEATURES.JIRA_SYNC]: jiraSync,
       [FEATURES.STANDUP_BOT]: standupBot,
@@ -214,7 +248,8 @@ export async function billingStatus(req) {
     },
     usage: {
       projects: { used: projects, limit: unlimitedProjects ? null : FREE_LIMITS.projects },
-      developers: { used: developers, limit: unlimitedProjects ? null : FREE_LIMITS.developers },
+      // Tiered by plan (free 5, Basic 10, Pro 25) via the members_<n> slugs.
+      developers: { used: developers, limit: members },
       aiGenerations: {
         used: aiUsed,
         limit: unlimitedAi ? null : FREE_LIMITS.aiGenerationsPerMonth,
