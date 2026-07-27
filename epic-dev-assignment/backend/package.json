@@ -9,7 +9,7 @@
     "dev": "node --watch server.js",
     "migrate": "node scripts/migrate.js",
     "crypto-selftest": "node scripts/crypto-selftest.js",
-    "test": "node --test"
+    "test": "node --experimental-test-module-mocks --test"
   },
   "dependencies": {
     "@clerk/backend": "^3.11.5",

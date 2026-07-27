@@ -7,6 +7,9 @@ import { isDoneCategory } from '../services/jiraService.js';
 import {
   requireProjectKey, requireIssueScope, requireBoardScope, requireSprintScope, orgJiraScope,
 } from '../middleware/jiraScope.js';
+import {
+  requireIssueAssignee, requireAssignableByCaller, callerJiraAccountId,
+} from '../middleware/jiraOwnership.js';
 
 const router = express.Router();
 // Auth: enforced by the default-closed /api gate in server.js.
@@ -51,6 +54,20 @@ router.get('/jira/health', async (req, res) => {
 // Unfiltered, this returned every board on the customer's Atlassian site — a
 // free directory of projects (HR, LEGAL, SEC…) to any org member, and the
 // starting point for picking a board id to aim the other endpoints at.
+// Who the caller is on the tenant's Jira site. The board uses this to know which
+// cards are the user's own — transitions are assignee-only, so a card that is not
+// theirs should not be draggable in the first place.
+// Returns accountId only; never the credential owner's identity.
+router.get('/jira/my-account', async (req, res) => {
+  try {
+    const accountId = await callerJiraAccountId(req);
+    res.json({ success: true, accountId: accountId || null });
+  } catch {
+    // Not being resolvable is a normal state (no Jira account yet), not an error.
+    res.json({ success: true, accountId: null });
+  }
+});
+
 router.get('/jira/boards', async (req, res) => {
   try {
     const [jira, scope] = await Promise.all([
@@ -154,7 +171,10 @@ router.get('/jira/issue/:issueKey', requireIssueScope, async (req, res) => {
   }
 });
 
-router.put('/jira/issue/:issueKey', requireIssueScope, async (req, res) => {
+// Transitions are ASSIGNEE ONLY. requireIssueScope confirms the issue belongs to
+// a project this org owns; requireIssueAssignee confirms the caller is the person
+// it is assigned to. An unassigned issue is movable by nobody.
+router.put('/jira/issue/:issueKey', requireIssueScope, requireIssueAssignee, async (req, res) => {
   try {
     const { transitionId } = req.body;
     if (!transitionId) return res.status(400).json({ error: 'transitionId required' });
@@ -171,7 +191,11 @@ router.put('/jira/issue/:issueKey', requireIssueScope, async (req, res) => {
 
 // ─── Issue Assignment ───────────────────────────────────────────────────────
 
-router.put('/jira/issue/:issueKey/assign', requireIssueScope, async (req, res) => {
+// Guarded for the same reason. Leaving reassignment open while locking
+// transitions would make the assignee rule one extra click rather than a rule:
+// assign it to yourself, then move it. You may claim an unassigned issue or hand
+// off one that is already yours.
+router.put('/jira/issue/:issueKey/assign', requireIssueScope, requireAssignableByCaller, async (req, res) => {
   try {
     const { jiraQuery } = req.body;
     if (!jiraQuery) return res.status(400).json({ error: 'jiraQuery (email or username) is required' });

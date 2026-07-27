@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable, pointerWithin, rectIntersection } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Flame, RefreshCw, AlertCircle, X, Search, Columns3, WifiOff, Inbox } from 'lucide-react';
+import { GripVertical, Lock, Flame, RefreshCw, AlertCircle, X, Search, Columns3, WifiOff, Inbox } from 'lucide-react';
 import { normalizeStatus } from '../../hooks/useKanbanSync';
 import NotConnected from '../shared/NotConnected';
 
@@ -26,11 +26,15 @@ const colConfig = {
 };
 
 // ─── Card Component ───────────────────────────────────────────────────────
-function KanbanCard({ issue, column, isDragOverlay, isSyncing, variant }) {
+function KanbanCard({ issue, column, isDragOverlay, isSyncing, variant, canMove = true }) {
+  // Only the assignee may move a ticket (enforced server-side). Locking the drag
+  // here means a card that isn't yours never appears to move at all, rather than
+  // sliding across and snapping back with an error.
+  const locked = !canMove;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: issue.key,
     data: { issue },
-    disabled: isSyncing,
+    disabled: isSyncing || locked,
   });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -47,12 +51,25 @@ function KanbanCard({ issue, column, isDragOverlay, isSyncing, variant }) {
       style={isDragOverlay ? {} : style}
       {...attributes}
       {...listeners}
-      className={`rounded-lg border border-l-[3px] transition-all ${isSyncing ? 'pointer-events-none opacity-60' : 'cursor-grab active:cursor-grabbing'} ${cc.accent} ${cc.bg} ${
+      title={
+        locked
+          ? (issue.assignee?.name
+              ? `Assigned to ${issue.assignee.name} — only they can move it`
+              : 'Unassigned — assign it to yourself to move it')
+          : undefined
+      }
+      className={`rounded-lg border border-l-[3px] transition-all ${
+        isSyncing ? 'pointer-events-none opacity-60'
+          : locked ? 'cursor-not-allowed opacity-75'
+          : 'cursor-grab active:cursor-grabbing'
+      } ${cc.accent} ${cc.bg} ${
         isDragOverlay ? 'shadow-xl ring-2 ring-teal-300 border-teal-400' : cc.border
       } ${isMini ? 'p-2.5' : 'p-3'}`}
     >
       <div className={`flex items-start ${isMini ? 'gap-1.5' : 'gap-2'}`}>
-        <GripVertical className={`${isMini ? 'w-3 h-3' : 'w-4 h-4'} mt-0.5 shrink-0 ${cc.grip}`} />
+        {locked
+          ? <Lock className={`${isMini ? 'w-3 h-3' : 'w-3.5 h-3.5'} mt-0.5 shrink-0 text-gray-300`} />
+          : <GripVertical className={`${isMini ? 'w-3 h-3' : 'w-4 h-4'} mt-0.5 shrink-0 ${cc.grip}`} />}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-0.5">
             <span className={`font-mono font-medium ${cc.key} ${isMini ? 'text-[10px]' : 'text-xs'}`}>{issue.key}</span>
@@ -95,7 +112,7 @@ function KanbanCard({ issue, column, isDragOverlay, isSyncing, variant }) {
 }
 
 // ─── Column Component ─────────────────────────────────────────────────────
-function KanbanColumn({ id, items, config, syncingKey, variant }) {
+function KanbanColumn({ id, items, config, syncingKey, variant, canMove }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const isMini = variant === 'mini';
   const totalSP = items.reduce((s, i) => s + (i.storyPoints || 0), 0);
@@ -116,7 +133,7 @@ function KanbanColumn({ id, items, config, syncingKey, variant }) {
       </div>
       <div className={`space-y-1.5 flex-1 ${isMini ? 'max-h-[400px] overflow-y-auto' : ''}`}>
         {items.map(issue => (
-          <KanbanCard key={issue.key} issue={issue} column={id} isSyncing={syncingKey === issue.key} variant={variant} />
+          <KanbanCard key={issue.key} issue={issue} column={id} isSyncing={syncingKey === issue.key} variant={variant} canMove={canMove ? canMove(issue) : true} />
         ))}
         {items.length === 0 && (
           <div className={`h-full flex items-center justify-center text-center text-xs rounded-lg border-2 border-dashed transition-colors ${
@@ -281,6 +298,17 @@ export default function KanbanBoard({ kanban, variant = 'full', title }) {
           </button>
         </div>
       )}
+      {/* Without a matching Jira account every card is locked. Say why, or the
+          board just looks broken. */}
+      {kanban.myAccountId === null && !kanban.isLoading && !kanban.isNotSynced && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg bg-amber-50 px-4 py-2.5 text-sm text-amber-800 border border-amber-200">
+          <Lock className="h-4 w-4 flex-shrink-0" />
+          <span className="flex-1">
+            We couldn&apos;t match your account to a Jira user, so you can&apos;t move cards yet.
+            Ask an admin to invite your email address to Jira.
+          </span>
+        </div>
+      )}
       {kanban.syncingKey && (
         <div className="mb-3 flex items-center gap-2 text-xs text-teal-600 bg-teal-50 rounded-lg px-3 py-2 border border-teal-200">
           <RefreshCw className="w-3 h-3 animate-spin" />
@@ -357,7 +385,7 @@ export default function KanbanBoard({ kanban, variant = 'full', title }) {
       >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
           {Object.entries(filteredColumns).map(([name, items]) => (
-            <KanbanColumn key={name} id={name} items={items} config={colConfig[name]} syncingKey={kanban.syncingKey} variant={variant} />
+            <KanbanColumn key={name} id={name} items={items} config={colConfig[name]} syncingKey={kanban.syncingKey} variant={variant} canMove={kanban.canMove} />
           ))}
         </div>
         <DragOverlay>

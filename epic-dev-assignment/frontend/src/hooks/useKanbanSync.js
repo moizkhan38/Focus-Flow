@@ -139,6 +139,19 @@ export function useKanbanSync(projectKey, sprintId) {
     return [...names].sort();
   }, [storyIssues]);
 
+  // === Who am I on this Jira site? ===
+  // Fetched once per mount; the backend caches the Clerk-email -> accountId
+  // lookup for 10 minutes, so this is cheap.
+  const [myAccountId, setMyAccountId] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch('/api/jira/my-account')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d) setMyAccountId(d.accountId || null); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // === State flags ===
   const isEmpty = !isLoading && storyIssues.length === 0;
   const isNotSynced = !projectKey && !sprintId;
@@ -170,7 +183,13 @@ export function useKanbanSync(projectKey, sprintId) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transitionId: transition.id }),
       });
-      if (!putRes.ok) throw new Error(`Jira transition failed for ${issueKey}`);
+      if (!putRes.ok) {
+        // Surface the server's reason. Transitions are assignee-only, so the
+        // useful message here is "SCRUM-5 is assigned to Bob, so only they can
+        // move it" — a generic failure string would leave the user guessing.
+        const body = await putRes.json().catch(() => ({}));
+        throw new Error(body.message || body.error || `Jira transition failed for ${issueKey}`);
+      }
 
       // Refresh from Jira, then clear pending move
       await mutateIssues();
@@ -197,6 +216,14 @@ export function useKanbanSync(projectKey, sprintId) {
 
   const clearMoveError = useCallback(() => setMoveError(null), []);
 
+  // canMove(issue): transitions are assignee-only on the server. Resolving the
+  // caller's Jira accountId here lets the board refuse the drag up front instead
+  // of animating a move that snaps back a second later.
+  const canMove = useCallback(
+    (issue) => !!myAccountId && !!issue?.assignee?.accountId && issue.assignee.accountId === myAccountId,
+    [myAccountId]
+  );
+
   const refresh = useCallback(() => {
     mutateIssues();
   }, [mutateIssues]);
@@ -218,6 +245,10 @@ export function useKanbanSync(projectKey, sprintId) {
     connectionError,
     jiraNotConnected,
     isDragLocked,
+
+    // Ownership — only the assignee may move a card
+    myAccountId,
+    canMove,
 
     // Actions
     moveIssue,

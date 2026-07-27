@@ -360,6 +360,23 @@ export function createJiraClient({ domain, email, apiToken }) {
     }));
   }
 
+  // Who currently owns an issue. Used by the assignee-only guard on transitions
+  // and reassignment, so it asks Jira for exactly one field.
+  // Returns { accountId, name } — accountId is null when the issue is unassigned.
+  async function getIssueAssignee(issueKey) {
+    const res = await jiraFetch(`/rest/api/3/issue/${issueKey}?fields=assignee`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(parseJiraError(err, res.status));
+    }
+    const data = await res.json();
+    const a = data.fields?.assignee;
+    return {
+      accountId: a?.accountId || null,
+      name: a?.displayName || null,
+    };
+  }
+
   async function transitionIssue(issueKey, transitionId) {
     const res = await jiraFetch(`/rest/api/3/issue/${issueKey}/transitions`, {
       method: 'POST',
@@ -853,6 +870,7 @@ export function createJiraClient({ domain, email, apiToken }) {
     getProjectIssues,
     getBurndownData,
     getIssueTransitions,
+    getIssueAssignee,
     transitionIssue,
     createEpic,
     createStory,
