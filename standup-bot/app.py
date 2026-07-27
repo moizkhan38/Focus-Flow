@@ -458,7 +458,84 @@ def get_jira_account_id(email):
         return None
 
 
-def move_jira_ticket(ticket_id, status_name, user_account_id=None):
+# Slack user id -> Jira email (or accountId), for people whose Slack and Jira
+# accounts use DIFFERENT addresses. JSON, e.g.
+#   STANDUP_JIRA_USER_MAP={"U01ABC2DEF":"me@work.com","U05XYZ":"5f7a…accountId"}
+# This is the explicit escape hatch: matching on email or name only works when
+# the two systems agree, and often they don't.
+def _load_user_map():
+    raw = (os.environ.get("STANDUP_JIRA_USER_MAP") or "").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+    except Exception as e:
+        log.warning("STANDUP_JIRA_USER_MAP is not valid JSON, ignoring it: %s", e)
+        return {}
+
+
+JIRA_USER_MAP = _load_user_map()
+
+
+def resolve_submitter_jira_account(user_id):
+    """Map the Slack user who submitted a standup to their Jira accountId.
+
+    Returns (account_id, how) where `how` names the step that succeeded, or the
+    reason nothing matched — the message shown to the user is only useful if it
+    says WHICH lookup failed.
+
+    Ordered strongest-first. Nothing here is allowed to fall back to the bot's own
+    Atlassian identity: evaluating an unidentified submitter as the admin is what
+    let any workspace member move any ticket.
+    """
+    # 1. Explicit mapping. Trusted outright — an operator configured it.
+    mapped = JIRA_USER_MAP.get(user_id)
+    if mapped:
+        if "@" in mapped:
+            acct = get_jira_account_id(mapped)
+            if acct:
+                return acct, "explicit map (email)"
+            return None, f"STANDUP_JIRA_USER_MAP points at {mapped}, but Jira has no such user"
+        return mapped, "explicit map (accountId)"
+
+    # 2. Slack profile email — exact, and the same identity Jira knows when the
+    #    two systems share an address.
+    profile = {}
+    try:
+        profile = get_slack_client().users_info(user=user_id)["user"].get("profile", {}) or {}
+    except Exception as e:
+        return None, f"could not read your Slack profile ({e})"
+
+    email = profile.get("email")
+    if email:
+        acct = get_jira_account_id(email)
+        if acct:
+            return acct, "Slack profile email"
+
+    # 3. Display name, accepted ONLY when it resolves to exactly one Jira user.
+    #    Weaker than an email match, so ambiguity is treated as no match rather
+    #    than guessing which teammate you are.
+    for field in ("real_name", "display_name"):
+        name = (profile.get(field) or "").strip()
+        if not name:
+            continue
+        try:
+            matches = [u for u in get_jira_client().user_find_by_user_string(query=name)
+                       if u.get("accountId") and u.get("active", True)]
+        except Exception:
+            matches = []
+        if len(matches) == 1:
+            return matches[0]["accountId"], f"Slack {field} matched one Jira user"
+        if len(matches) > 1:
+            return None, f'"{name}" matches {len(matches)} Jira users, so we cannot tell which is you'
+
+    if email:
+        return None, f"no Jira account uses {email}, and your Slack name matched none either"
+    return None, "your Slack profile has no email address (the bot needs the users:read.email scope)"
+
+
+def move_jira_ticket(ticket_id, status_name, user_account_id=None, identity_reason=None):
     """Transition a Jira ticket to the given status after ownership check.
 
     The ownership check is MANDATORY. It used to be `if user_account_id:` —
@@ -474,10 +551,11 @@ def move_jira_ticket(ticket_id, status_name, user_account_id=None):
         ticket_id = ticket_id.upper().strip()
 
         if not user_account_id:
+            why = identity_reason or "we could not identify your Jira account"
             return (
-                f"[DENIED] {ticket_id}: "
-                "Could not identify your Jira account, so ownership can't be verified. "
-                "Add the email address of your Jira account to your Slack profile."
+                f"[DENIED] {ticket_id}: Ownership can't be verified — {why}. "
+                "Ask an admin to map your Slack account to your Jira user "
+                "(STANDUP_JIRA_USER_MAP) if the two use different email addresses."
             )
 
         if not verify_ticket_exists(ticket_id):
@@ -774,22 +852,21 @@ def process_standup_logic(user_id, project_key, yesterday, today, blocker):
         # so falling back to it made an unidentified submitter be evaluated AS the
         # admin — able to move every ticket assigned to that account. If we cannot
         # identify the submitter, move_jira_ticket denies (fail closed).
-        try:
-            user_info = get_slack_client().users_info(user=user_id)
-            user_email = user_info["user"]["profile"].get("email")
-        except Exception:
-            user_email = None
-        user_account_id = get_jira_account_id(user_email) if user_email else None
+        user_account_id, identity_how = resolve_submitter_jira_account(user_id)
+        if user_account_id:
+            log.info("[IDENTITY] %s resolved via %s", user_id, identity_how)
+        else:
+            log.warning("[IDENTITY] %s unresolved: %s", user_id, identity_how)
 
         # Jira execution
         results = []
 
         for tid in analysis.get("finished_tickets", []):
-            res = move_jira_ticket(tid, "Done", user_account_id)
+            res = move_jira_ticket(tid, "Done", user_account_id, identity_how)
             results.append(res)
 
         for tid in analysis.get("today_tickets", []):
-            res = move_jira_ticket(tid, "In Progress", user_account_id)
+            res = move_jira_ticket(tid, "In Progress", user_account_id, identity_how)
             results.append(res)
 
         if analysis.get("is_blocker"):
@@ -803,9 +880,8 @@ def process_standup_logic(user_id, project_key, yesterday, today, blocker):
             user_id, project_key, yesterday, today, blocker, analysis
         )
 
-        # Get user's real name (reuse user_info from above)
         try:
-            user_name = user_info["user"]["real_name"]
+            user_name = get_slack_client().users_info(user=user_id)["user"]["real_name"]
         except Exception:
             user_name = user_id
 
@@ -1535,6 +1611,33 @@ def test_reminder():
         results["errors"].append(str(e))
 
     return jsonify(results), 200
+
+
+@app.route("/test/whoami/<slack_user_id>", methods=["GET"])
+def test_whoami(slack_user_id):
+    """Diagnose the Slack -> Jira identity mapping for one user.
+
+    Ownership checks deny when a submitter cannot be matched to a Jira account,
+    and the two systems frequently use different email addresses. This says
+    exactly which lookup succeeded or why they all failed, without exposing
+    anything beyond the caller's own workspace (gated by ADMIN_API_KEY).
+    """
+    account_id, how = resolve_submitter_jira_account(slack_user_id)
+    profile = {}
+    try:
+        profile = get_slack_client().users_info(user=slack_user_id)["user"].get("profile", {}) or {}
+    except Exception as e:
+        profile = {"error": str(e)}
+    return jsonify({
+        "slackUserId": slack_user_id,
+        "slackEmail": profile.get("email"),
+        "slackRealName": profile.get("real_name"),
+        "slackDisplayName": profile.get("display_name"),
+        "explicitlyMapped": slack_user_id in JIRA_USER_MAP,
+        "jiraAccountId": account_id,
+        "resolvedBy" if account_id else "blockedBecause": how,
+        "canMoveTickets": bool(account_id),
+    })
 
 
 @app.route("/test/followup", methods=["GET"])
