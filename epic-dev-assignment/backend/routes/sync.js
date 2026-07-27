@@ -145,7 +145,7 @@ function distributeStoriesAcrossSprints(allStories, sprintCount, dependencies = 
   return bins.map(b => b.stories);
 }
 
-router.post('/ai/sync-jira', requireFeature(FEATURES.JIRA_SYNC, 'Syncing to Jira is a paid feature. Upgrade to push epics, stories and sprints into your Jira site.'), async (req, res) => {
+router.post('/ai/sync-jira', requireFeature(FEATURES.JIRA_SYNC, 'Syncing to Jira isn’t included in your plan. Upgrade to push epics, stories and sprints into your Jira site.'), async (req, res) => {
   const {
     epics = [],
     assignments = [],

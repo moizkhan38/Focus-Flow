@@ -18,7 +18,7 @@ import { FEATURES } from '../services/billing.js';
 // verify its connection (and see what it would get) before paying.
 const paidJira = requireFeature(
   FEATURES.JIRA_SYNC,
-  'Live Jira boards, sprints and burndown are a paid feature.'
+  'Live Jira boards, sprints and burndown aren’t included in your plan.'
 );
 
 const router = express.Router();

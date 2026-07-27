@@ -202,6 +202,27 @@ test('paid-ness is derived from features, not from the plan key', async () => {
   assert.equal((await run(requireProjectQuota, paidButKeyedFree)).code, 200);
 });
 
+test('a mid-tier plan gets exactly its own features, not a cumulative ladder', async () => {
+  // Basic carries unlimited_ai + unlimited_projects but NOT the integrations.
+  // Entitlement is the feature set of the subscribed plan, so a Basic org must
+  // lose its caps while still being refused Jira sync and the standup bot.
+  const basic = {
+    orgId: 'org_basic',
+    auth: { sessionClaims: { pla: 'o:basic', fea: 'o:unlimited_ai,o:unlimited_projects' } },
+  };
+  const status = await billing.billingStatus(basic);
+  assert.equal(status.isPaid, true);
+  assert.equal(status.usage.projects.limit, null, 'caps lifted');
+  assert.equal(status.usage.aiGenerations.limit, null);
+  assert.equal(status.features.jira_sync, false, 'integrations still gated');
+  assert.equal(status.features.standup_bot, false);
+
+  assert.equal((await run(requireAiQuota, basic)).code, 200);
+  assert.equal((await run(requireProjectQuota, basic)).code, 200);
+  assert.equal((await run(requireFeature(billing.FEATURES.JIRA_SYNC), basic)).code, 402);
+  assert.equal((await run(requireFeature(billing.FEATURES.STANDUP_BOT), basic)).code, 402);
+});
+
 test('an unsubscribed org gets the free tier without any "free" plan existing', async () => {
   const status = await billing.billingStatus(reqFor());
   assert.equal(status.isPaid, false);

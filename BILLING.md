@@ -49,23 +49,31 @@ can rename or repackage plans later without touching code.
 | `unlimited_projects` | Removes the project **and** team-member caps |
 | `unlimited_ai` | Removes the monthly AI generation cap |
 
-## 3. Create the plan
+## 3. Create the plans
 
 Clerk → **Subscription plans** → **Plans for Organizations** tab → **Add Plan**.
 The tab matters: a plan created under the user tab bills individuals and this app
 will never see it.
 
-**Create only the PAID plan.** Clerk enforces a $1 minimum price, so a literal $0
-"Free" plan cannot exist — and it doesn't need to. An organization with no
-subscription resolves to `plan: 'free'` with no features, which is exactly the
-free tier. Creating a cheap plan and *calling* it Free would charge people for
-the free allowances.
+**Do not create a "Free" plan.** Clerk enforces a $1 minimum price, so a literal
+$0 plan cannot exist — and it isn't needed. An organization with no subscription
+resolves to `plan: 'free'` with no features, which *is* the free tier. Creating a
+cheap plan and calling it Free would charge people for the free allowances.
+
+Two paid tiers, split so the upgrade has an obvious reason: **Basic** makes the
+AI tool usable without limits; **Pro** connects it to the team's actual stack.
 
 | Plan | Key | Price | Features |
 |---|---|---|---|
-| Pro | `pro` | your price (min $1) | all four above |
+| Basic | `basic` | e.g. $10/mo | `unlimited_ai`, `unlimited_projects` |
+| Pro | `pro` | e.g. $29/mo | all four — adds `jira_sync`, `standup_bot` |
 
-Leave **Publicly available** ON. Switched off, the plan is hidden from
+Pro must list **all four** slugs, not just the two Basic lacks: entitlement is the
+set of features on the subscribed plan, not a cumulative ladder. A Pro plan
+carrying only `jira_sync` and `standup_bot` would re-impose the project and AI
+caps on your most expensive customers.
+
+Leave **Publicly available** ON for both. Switched off, a plan is hidden from
 `<PricingTable />` — the billing page renders empty and nobody can subscribe.
 
 A **free trial** is safe to enable: Clerk reports trialing subscriptions with
