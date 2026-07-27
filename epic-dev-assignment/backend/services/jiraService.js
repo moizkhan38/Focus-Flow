@@ -219,7 +219,13 @@ export function createJiraClient({ domain, email, apiToken }) {
       throw new Error(parseJiraError(err, res.status));
     }
     const s = await res.json();
-    return { id: s.id, name: s.name, state: s.state, startDate: s.startDate, endDate: s.endDate, goal: s.goal };
+    // originBoardId is what middleware/jiraScope.js uses to decide whether this
+    // sprint belongs to a board the calling org actually owns — keep it.
+    return {
+      id: s.id, name: s.name, state: s.state,
+      startDate: s.startDate, endDate: s.endDate, goal: s.goal,
+      originBoardId: s.originBoardId ?? null,
+    };
   }
 
   // ─── Issues ────────────────────────────────────────────────────────────────

@@ -76,7 +76,12 @@ services:
       PORT: 3000
       STANDUP_DATA_FILE: /app/data/standup_data.json
       # Express reaches the bot here; the bot posts standups back to Express.
-      EXPRESS_DB_URL: http://backend:3003
+      # Must include the full path. With a bare origin the bot's POST 404s and it
+      # silently falls back to writing every standup — free text, blockers, the
+      # lot — unencrypted and without an org_id to standup_data.json on the
+      # botdata volume, while still reporting success to the user.
+      EXPRESS_DB_URL: http://backend:3003/api/db/standups
+      EXPRESS_BASE_URL: http://backend:3003
     volumes:
       - botdata:/app/data
     # No published port — internal network only. (Slack ingress terminates at

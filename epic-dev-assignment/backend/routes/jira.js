@@ -4,6 +4,9 @@ import { emitToProject } from '../io.js';
 import { jiraClientFor } from '../services/jiraClientFor.js';
 import { getJiraCredentials } from '../services/credentialProvider.js';
 import { isDoneCategory } from '../services/jiraService.js';
+import {
+  requireProjectKey, requireIssueScope, requireBoardScope, requireSprintScope, orgJiraScope,
+} from '../middleware/jiraScope.js';
 
 const router = express.Router();
 // Auth: enforced by the default-closed /api gate in server.js.
@@ -44,17 +47,24 @@ router.get('/jira/health', async (req, res) => {
   res.json(health);
 });
 
+// Boards are filtered to those this org has recorded against a project.
+// Unfiltered, this returned every board on the customer's Atlassian site — a
+// free directory of projects (HR, LEGAL, SEC…) to any org member, and the
+// starting point for picking a board id to aim the other endpoints at.
 router.get('/jira/boards', async (req, res) => {
   try {
-    const jira = await jiraClientFor(req.orgId);
+    const [jira, scope] = await Promise.all([
+      jiraClientFor(req.orgId),
+      orgJiraScope(req.orgId),
+    ]);
     const boards = await jira.getBoards();
-    res.json(boards);
+    res.json((boards || []).filter((b) => scope.boards.has(String(b.id))));
   } catch (err) {
     sendUpstreamError(res, err);
   }
 });
 
-router.get('/jira/sprints', async (req, res) => {
+router.get('/jira/sprints', requireBoardScope(r => r.query.boardId), async (req, res) => {
   try {
     // No global JIRA_BOARD_ID fallback anymore (per-org world) — the board id
     // comes from the query (frontend stores each project's jira_board_id).
@@ -70,7 +80,7 @@ router.get('/jira/sprints', async (req, res) => {
   }
 });
 
-router.get('/jira/sprint/:sprintId', async (req, res) => {
+router.get('/jira/sprint/:sprintId', requireSprintScope(r => r.params.sprintId), async (req, res) => {
   try {
     const jira = await jiraClientFor(req.orgId);
     const sprint = await jira.getSprintDetails(req.params.sprintId);
@@ -80,7 +90,7 @@ router.get('/jira/sprint/:sprintId', async (req, res) => {
   }
 });
 
-router.get('/jira/sprint/:sprintId/issues', async (req, res) => {
+router.get('/jira/sprint/:sprintId/issues', requireSprintScope(r => r.params.sprintId), async (req, res) => {
   try {
     const jira = await jiraClientFor(req.orgId);
     const issues = await jira.getSprintIssues(req.params.sprintId);
@@ -90,7 +100,7 @@ router.get('/jira/sprint/:sprintId/issues', async (req, res) => {
   }
 });
 
-router.get('/jira/sprint/:sprintId/burndown', async (req, res) => {
+router.get('/jira/sprint/:sprintId/burndown', requireSprintScope(r => r.params.sprintId), async (req, res) => {
   try {
     const jira = await jiraClientFor(req.orgId);
     const data = await jira.getBurndownData(req.params.sprintId);
@@ -124,7 +134,7 @@ router.get('/jira/sprint/:sprintId/burndown', async (req, res) => {
   }
 });
 
-router.get('/jira/project/:projectKey/issues', async (req, res) => {
+router.get('/jira/project/:projectKey/issues', requireProjectKey(r => r.params.projectKey), async (req, res) => {
   try {
     const jira = await jiraClientFor(req.orgId);
     const issues = await jira.getProjectIssues(req.params.projectKey);
@@ -134,7 +144,7 @@ router.get('/jira/project/:projectKey/issues', async (req, res) => {
   }
 });
 
-router.get('/jira/issue/:issueKey', async (req, res) => {
+router.get('/jira/issue/:issueKey', requireIssueScope, async (req, res) => {
   try {
     const jira = await jiraClientFor(req.orgId);
     const transitions = await jira.getIssueTransitions(req.params.issueKey);
@@ -144,7 +154,7 @@ router.get('/jira/issue/:issueKey', async (req, res) => {
   }
 });
 
-router.put('/jira/issue/:issueKey', async (req, res) => {
+router.put('/jira/issue/:issueKey', requireIssueScope, async (req, res) => {
   try {
     const { transitionId } = req.body;
     if (!transitionId) return res.status(400).json({ error: 'transitionId required' });
@@ -161,7 +171,7 @@ router.put('/jira/issue/:issueKey', async (req, res) => {
 
 // ─── Issue Assignment ───────────────────────────────────────────────────────
 
-router.put('/jira/issue/:issueKey/assign', async (req, res) => {
+router.put('/jira/issue/:issueKey/assign', requireIssueScope, async (req, res) => {
   try {
     const { jiraQuery } = req.body;
     if (!jiraQuery) return res.status(400).json({ error: 'jiraQuery (email or username) is required' });
@@ -183,7 +193,7 @@ router.put('/jira/issue/:issueKey/assign', async (req, res) => {
 
 // ─── Sprint Completion ──────────────────────────────────────────────────────
 
-router.get('/jira/board/:boardId/sprints', async (req, res) => {
+router.get('/jira/board/:boardId/sprints', requireBoardScope(r => r.params.boardId), async (req, res) => {
   try {
     const jira = await jiraClientFor(req.orgId);
     const sprints = await jira.getSprints(req.params.boardId);
@@ -193,7 +203,7 @@ router.get('/jira/board/:boardId/sprints', async (req, res) => {
   }
 });
 
-router.post('/jira/sprint/:sprintId/complete', async (req, res) => {
+router.post('/jira/sprint/:sprintId/complete', requireSprintScope(r => r.params.sprintId), requireBoardScope(r => r.body?.boardId), async (req, res) => {
   try {
     const { boardId } = req.body;
     const sprintId = req.params.sprintId;

@@ -15,10 +15,33 @@ const redact = {
     'token',
     'apiKey',
     'password',
+    // Slack's two secrets were missing from the list entirely, and the analyzer
+    // URL is a webhook whose path is usually itself a credential.
+    'botToken',
+    'signingSecret',
+    'analyzerUrl',
+    // body-parser hangs the raw unparsed request body off the error it throws;
+    // for a credential PUT that is the secret as one opaque string, which no
+    // field-name rule can catch. server.js deletes it before responding — this
+    // is the belt-and-braces for any other path that logs an error object.
+    'body',
+    'err.body',
     '*.apiToken',
     '*.token',
     '*.apiKey',
     '*.password',
+    '*.botToken',
+    '*.signingSecret',
+    '*.analyzerUrl',
+    '*.body',
+    // Two levels deep covers { err: { body } } and { req: { body: { token } } },
+    // which the single-wildcard rules above miss.
+    '*.*.apiToken',
+    '*.*.token',
+    '*.*.apiKey',
+    '*.*.password',
+    '*.*.botToken',
+    '*.*.signingSecret',
   ],
   censor: '[redacted]',
 };

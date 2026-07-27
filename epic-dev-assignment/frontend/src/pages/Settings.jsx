@@ -1009,14 +1009,24 @@ function SlackCard({ status, isAdmin, isLoading, onRefresh }) {
 
         <Field
           label="Standup analyzer URL"
-          hint="Optional webhook each standup is forwarded to after analysis."
+          hint={
+            status?.analyzerConfigured
+              ? `Currently forwarding to ${status.analyzerHost}. Re-enter the full URL to change it.`
+              : 'Optional webhook each standup is forwarded to after analysis.'
+          }
         >
           <input
             className={inputCls}
             type="url"
             value={analyzerUrl}
             onChange={(e) => setAnalyzerUrl(e.target.value)}
-            placeholder={status?.analyzerUrl || 'https://example.com/analyze (optional)'}
+            // Only the host is shown back, never the full URL: for most webhook
+            // providers the path is itself the secret.
+            placeholder={
+              status?.analyzerConfigured
+                ? `saved — ${status.analyzerHost}`
+                : 'https://example.com/analyze (optional)'
+            }
             disabled={!isAdmin || !!busy}
           />
         </Field>

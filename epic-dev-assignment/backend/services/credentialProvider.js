@@ -40,7 +40,10 @@ async function getPayload(orgId, provider) {
     'SELECT ciphertext FROM org_integrations WHERE org_id = $1 AND provider = $2',
     [orgId, provider]
   );
-  const payload = rows.length ? decryptJson(rows[0].ciphertext) : null;
+  // (orgId, provider) is passed as GCM additional authenticated data, so a
+  // ciphertext copied into a different row fails to authenticate rather than
+  // decrypting into the wrong tenant's client. See cryptoService.aad().
+  const payload = rows.length ? decryptJson(rows[0].ciphertext, { orgId, provider }) : null;
   cache.set(key, { payload, expiresAt: Date.now() + CACHE_TTL_MS });
   return payload;
 }
@@ -84,7 +87,7 @@ export async function getSlackCredentials(orgId) {
 //   github → { token, login }
 //   slack  → { botToken, signingSecret, analyzerUrl?, teamName? }
 export async function setIntegration(orgId, provider, payloadObj) {
-  const ciphertext = encryptJson(payloadObj);
+  const ciphertext = encryptJson(payloadObj, { orgId, provider });
   await query(
     `INSERT INTO org_integrations (org_id, provider, ciphertext, key_version)
      VALUES ($1, $2, $3, $4)
@@ -107,12 +110,36 @@ export async function deleteIntegration(orgId, provider) {
 
 // Non-secret connection status for the Settings UI. Domain/email/login are safe
 // to surface; the token is reduced to its last 4 characters.
+// One unreadable envelope must not take down the whole Settings page — that page
+// is the only way to reconnect the provider and fix it. A decrypt failure now
+// means "not connected" for that provider alone. Failures here are notable: with
+// context binding in place they indicate a wrong master key or a ciphertext that
+// was moved between rows.
+function hostOf(raw) {
+  try {
+    return new URL(raw).host;
+  } catch {
+    return null;
+  }
+}
+
+async function safePayload(orgId, provider) {
+  try {
+    return await getPayload(orgId, provider);
+  } catch (err) {
+    console.error(
+      `[credentialProvider] ${provider} credentials for ${orgId} failed to decrypt: ${err.message}`
+    );
+    return null;
+  }
+}
+
 export async function getStatus(orgId) {
   const [jira, github, slack, gemini] = await Promise.all([
-    getPayload(orgId, 'jira'),
-    getPayload(orgId, 'github'),
-    getPayload(orgId, 'slack'),
-    getPayload(orgId, 'gemini'),
+    safePayload(orgId, 'jira'),
+    safePayload(orgId, 'github'),
+    safePayload(orgId, 'slack'),
+    safePayload(orgId, 'gemini'),
   ]);
   return {
     jira: jira
@@ -125,7 +152,11 @@ export async function getStatus(orgId) {
       ? {
           connected: true,
           teamName: slack.teamName || null,
-          analyzerUrl: slack.analyzerUrl || null,
+          // Host only. For most webhook providers the URL path IS the secret
+          // (hooks.slack.com/services/T…/B…/<token>), so the full value belongs
+          // with the tokens, not in a status payload any member can read.
+          analyzerHost: hostOf(slack.analyzerUrl),
+          analyzerConfigured: !!slack.analyzerUrl,
           tokenSuffix: (slack.botToken || '').slice(-4),
         }
       : { connected: false },

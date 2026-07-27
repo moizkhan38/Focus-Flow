@@ -2,9 +2,44 @@ import express from 'express';
 import { sendUpstreamError } from '../utils/httpError.js';
 import { jiraClientFor } from '../services/jiraClientFor.js';
 import { generateProjectKey } from '../services/jiraService.js';
+import { query } from '../db.js';
 import { logger } from '../logger.js';
 
 const router = express.Router();
+
+// Only addresses that already belong to this org's developer roster may be
+// invited to the tenant's Atlassian site.
+//
+// The invite step used to take its addresses straight from req.body
+// (developerJiraMap), which made POST /api/ai/sync-jira an account-creation
+// primitive: ANY org member — no admin role needed, and the /api gate only
+// requires membership — could name an arbitrary external address and have the
+// backend call POST /rest/api/3/user with the org's stored Jira ADMIN token,
+// creating a real Atlassian account on the tenant's site and then adding it to
+// the project role. The caller can never read the token, but they could aim it.
+//
+// The roster is the authority: an address must already be recorded against a
+// developer in THIS org before it can be invited.
+const INVITE_EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const MAX_INVITES_PER_SYNC = 25;
+
+async function allowedInviteEmails(orgId, requested) {
+  const wanted = [...new Set(
+    requested.filter((e) => typeof e === 'string' && INVITE_EMAIL_RE.test(e.trim()))
+      .map((e) => e.trim().toLowerCase())
+  )];
+  if (wanted.length === 0) return { allowed: [], rejected: [] };
+
+  const { rows } = await query(
+    `SELECT LOWER(email) AS email FROM developers
+      WHERE org_id = $1 AND email IS NOT NULL AND LOWER(email) = ANY($2::text[])`,
+    [orgId, wanted]
+  );
+  const roster = new Set(rows.map((r) => r.email));
+  const allowed = wanted.filter((e) => roster.has(e)).slice(0, MAX_INVITES_PER_SYNC);
+  const rejected = wanted.filter((e) => !roster.has(e));
+  return { allowed, rejected };
+}
 // Auth: enforced by the default-closed /api gate in server.js.
 // Jira credentials are per-org (Phase 2): the handler resolves the caller's
 // org client via jiraClientFor(req.orgId); orgs without a connected Jira get
@@ -301,15 +336,31 @@ router.post('/ai/sync-jira', async (req, res) => {
     // Invite unresolved users who have Jira emails
     const invitedUsers = [];
     if (unresolvedUsers.length > 0) {
-      const emailsToInvite = unresolvedUsers
+      const requestedEmails = unresolvedUsers
         .map(u => developerJiraMap[u])
         .filter(Boolean);
+
+      // Never invite an address the caller simply typed into the request body —
+      // it must already be on this org's developer roster. See allowedInviteEmails.
+      const { allowed: emailsToInvite, rejected } = await allowedInviteEmails(req.orgId, requestedEmails);
+      if (rejected.length > 0) {
+        req.log.warn(
+          `[Sync] Refused to invite ${rejected.length} address(es) not on the org's developer roster`
+        );
+        warnings.push(
+          `Not invited (not on your team roster): ${rejected.join(', ')}. ` +
+          'Add them on the Developers page first — this prevents arbitrary addresses ' +
+          'being given accounts on your Jira site.'
+        );
+      }
 
       if (emailsToInvite.length > 0) {
         try {
           const inviteResults = await jira.inviteUsersToJira(emailsToInvite);
           for (const result of inviteResults) {
-            const username = Object.entries(developerJiraMap).find(([, email]) => email === result.email)?.[0];
+            // allowedInviteEmails normalizes to lowercase, so match case-insensitively.
+            const username = Object.entries(developerJiraMap)
+              .find(([, email]) => String(email || '').toLowerCase() === String(result.email || '').toLowerCase())?.[0];
             if (!username) {
               req.log.warn(`[Sync] No developer mapping found for invited email ${result.email} — skipping`);
               continue;

@@ -98,6 +98,8 @@ Deploy `epic-dev-assignment/backend` (its Dockerfile). Public service. Env:
 | `CLERK_SECRET_KEY` | `sk_live_…` |
 | `CLERK_PUBLISHABLE_KEY` | `pk_live_…` |
 | `CREDENTIALS_MASTER_KEY` | the base64 key from §1 (**backed up**) |
+| `INTERNAL_ORG_ID` | **required** — the Clerk org id the standup bot serves (same as its `STANDUP_ORG_ID`). Unset ⇒ `/api/internal/*` is disabled (503). |
+| `INTERNAL_CREDENTIALS_KEY` | a **second, distinct** key for `/api/internal/*`. Set it here and on the bot only — never on epic-generator. |
 | `LOG_LEVEL` | `info` |
 
 > `JIRA_*` and `GITHUB_TOKEN` are **gone** (Phase 2.8) — each org connects its own via the app's Integrations page.
@@ -134,8 +136,9 @@ Deploy `standup-bot` (its Dockerfile). Public URL needed for `/slack/*`. Env:
 | `GEMINI_API_KEY` | Gemini key |
 | `GEMINI_MODEL` | `gemini-flash-lite-latest` |
 | `JIRA_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` / `JIRA_PROJECT_KEY` | bot's own Jira (single-workspace, D6) |
-| `EXPRESS_DB_URL` | the backend's URL (bot posts standups there) |
+| `EXPRESS_DB_URL` | the backend's URL **including `/api/db/standups`** — a bare origin makes every standup fall back to an unencrypted on-disk JSON file |
 | `INTERNAL_API_KEY` | **same** shared key |
+| `INTERNAL_CREDENTIALS_KEY` | same value as the backend's — the key for fetching stored Slack/Jira credentials |
 | `ADMIN_API_KEY` | from §1 (gates `/test/*`; unset → those routes 404) |
 | `REMINDER_HOUR` / `REMINDER_MINUTE` | `9` / `30` (default daily reminder time) |
 | `STANDUP_ORG_ID` | the Clerk **prod** org id this bot posts into |

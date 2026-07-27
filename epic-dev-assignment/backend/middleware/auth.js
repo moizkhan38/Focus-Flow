@@ -35,37 +35,74 @@ export function requireOrgAdmin(req, res, next) {
 // response timing leaks how much of a guessed key was correct. Lengths are
 // compared first because timingSafeEqual throws on a length mismatch, and length
 // alone is not the secret.
-function validInternalKey(req) {
-  const configured = process.env.INTERNAL_API_KEY || '';
-  const provided = req.get('X-Internal-Key') || '';
+function keyMatches(configured, provided) {
   if (!configured || provided.length !== configured.length) return false;
   return timingSafeEqual(Buffer.from(provided), Buffer.from(configured));
 }
 
-// The internal key is shared with the Flask service and the standup bot, and the
-// caller names its own tenant via X-Org-Id. That means a compromise of ANY of
-// those services — or a leak of the key from any of their environments — would
-// otherwise let the holder enumerate X-Org-Id and pull every tenant's decrypted
-// Jira and Slack credentials.
+function validInternalKey(req) {
+  return keyMatches(process.env.INTERNAL_API_KEY || '', req.get('X-Internal-Key') || '');
+}
+
+// The credential lane (/api/internal/*) hands back DECRYPTED Jira and Slack
+// secrets, so it gets its own key rather than reusing INTERNAL_API_KEY.
 //
-// Per D6 the bot serves exactly one organization, so the blast radius can be
-// pinned to that one. Set INTERNAL_ORG_ID on the backend to the same value as the
-// bot's STANDUP_ORG_ID. Left unset, behaviour is unchanged (any org id accepted),
-// so this is opt-in hardening rather than a breaking change.
-function internalOrgAllowed(orgId) {
-  const pinned = (process.env.INTERNAL_ORG_ID || '').trim();
-  if (!pinned) return true;
-  return orgId === pinned;
+// Why: INTERNAL_API_KEY is deliberately the same value in three services, and one
+// of them — epic-generator — only ever *verifies* it on inbound calls. With a
+// single symmetric secret, holding the verifier is identical to holding the
+// caller credential, so a file read in the smallest Flask app was enough to pull
+// every pinned org's plaintext tokens out of the backend. Flask has no business
+// calling this lane at all.
+//
+// INTERNAL_CREDENTIALS_KEY is checked first; if it is unset the lane falls back
+// to INTERNAL_API_KEY so existing deployments keep working, and server.js logs a
+// warning at boot. Set it on the backend and on the standup bot (and NOWHERE
+// else) to close the gap.
+function validCredentialsKey(req) {
+  const provided = req.get('X-Internal-Key') || '';
+  const dedicated = (process.env.INTERNAL_CREDENTIALS_KEY || '').trim();
+  if (dedicated) return keyMatches(dedicated, provided);
+  return keyMatches(process.env.INTERNAL_API_KEY || '', provided);
+}
+
+// The tenant the internal lane may act as. Per D6 the bot serves exactly ONE
+// organization, so this is pinned by configuration and NEVER taken from the
+// caller.
+//
+// This used to accept whatever X-Org-Id the caller sent, and treated an unset
+// INTERNAL_ORG_ID as "allow any org" — which made the lane a decryption oracle
+// for every tenant to anyone holding the shared key. It is now fail-closed:
+// unset means the internal lane is disabled entirely, and the header can only
+// ever agree with the pinned value, never widen it.
+export function pinnedInternalOrg() {
+  return (process.env.INTERNAL_ORG_ID || '').trim() || null;
+}
+
+// Resolves the org for an authenticated internal caller, or an error to send.
+function resolveInternalOrg(req) {
+  const pinned = pinnedInternalOrg();
+  if (!pinned) {
+    return {
+      status: 503,
+      error: 'INTERNAL_LANE_DISABLED',
+      hint: 'Set INTERNAL_ORG_ID on the backend to the org the standup bot serves.',
+    };
+  }
+  const claimed = req.get('X-Org-Id');
+  if (claimed && claimed !== pinned) {
+    return { status: 403, error: 'INTERNAL_ORG_NOT_ALLOWED' };
+  }
+  return { orgId: pinned };
 }
 
 export function orgOrInternal(req, res, next) {
   if (validInternalKey(req)) {
-    const orgId = req.get('X-Org-Id') || null; // may be null until the bot is bound (1.6 scoping tolerates it)
-    if (!internalOrgAllowed(orgId)) {
-      return res.status(403).json({ success: false, error: 'INTERNAL_ORG_NOT_ALLOWED' });
+    const resolved = resolveInternalOrg(req);
+    if (resolved.error) {
+      return res.status(resolved.status).json({ success: false, ...resolved });
     }
     req.internal = true;
-    req.orgId = orgId;
+    req.orgId = resolved.orgId; // pinned, not caller-supplied
     return next();
   }
   return requireOrg(req, res, next);
@@ -75,18 +112,18 @@ export function orgOrInternal(req, res, next) {
 // credentials to a trusted server-side service (the bot fetching its Slack
 // config). A signed-in user, org admin or not, must never reach these.
 export function requireInternal(req, res, next) {
-  if (!validInternalKey(req)) {
+  if (!validCredentialsKey(req)) {
     // Distinct from requireOrg's UNAUTHENTICATED on purpose: an identical body
     // for both makes it impossible to tell whether a caller failed the internal
     // key check or simply had no Clerk session, which is exactly the ambiguity
     // that made the earlier INTERNAL_API_KEY mismatch so slow to diagnose.
     return res.status(401).json({ success: false, error: 'INTERNAL_AUTH_REQUIRED' });
   }
-  const orgId = req.get('X-Org-Id') || null;
-  if (!internalOrgAllowed(orgId)) {
-    return res.status(403).json({ success: false, error: 'INTERNAL_ORG_NOT_ALLOWED' });
+  const resolved = resolveInternalOrg(req);
+  if (resolved.error) {
+    return res.status(resolved.status).json({ success: false, ...resolved });
   }
   req.internal = true;
-  req.orgId = orgId;
+  req.orgId = resolved.orgId;
   return next();
 }

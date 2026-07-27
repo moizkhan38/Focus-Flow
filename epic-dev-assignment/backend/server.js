@@ -8,7 +8,7 @@ import rateLimit from 'express-rate-limit';
 import { clerkMiddleware } from '@clerk/express';
 import { verifyToken } from '@clerk/backend';
 import { Server as SocketIOServer } from 'socket.io';
-import { requireOrg, orgOrInternal, requireInternal } from './middleware/auth.js';
+import { requireOrg, orgOrInternal, requireInternal, pinnedInternalOrg } from './middleware/auth.js';
 import { refreshAllDevelopers } from './services/developerRefresher.js';
 import internalRouter from './routes/internal.js';
 import epicsRouter from './routes/epics.js';
@@ -40,6 +40,25 @@ if (!process.env.CLERK_SECRET_KEY) {
 // master key. Fail fast at boot if it's missing/malformed rather than at the
 // first credential save.
 assertMasterKey();
+
+// The internal lane (/api/internal/*) returns DECRYPTED Jira and Slack secrets.
+// It is now fail-closed on the org: unset INTERNAL_ORG_ID disables it outright
+// rather than accepting whatever tenant the caller names. Say so loudly at boot,
+// because the symptom downstream is a standup bot that 503s for no obvious reason.
+if (!pinnedInternalOrg()) {
+  logger.warn(
+    '[Auth] INTERNAL_ORG_ID is not set — the internal credential lane is DISABLED. ' +
+    'The standup bot will get 503 INTERNAL_LANE_DISABLED until it is set to the ' +
+    "org the bot serves (the same value as the bot's STANDUP_ORG_ID)."
+  );
+} else if (!(process.env.INTERNAL_CREDENTIALS_KEY || '').trim()) {
+  logger.warn(
+    '[Auth] INTERNAL_CREDENTIALS_KEY is not set — /api/internal/* still accepts ' +
+    'INTERNAL_API_KEY, which epic-generator also holds purely to verify inbound ' +
+    'calls. Set a separate key on the backend and the standup bot so a read of the ' +
+    "Flask service's env cannot pull decrypted credentials."
+  );
+}
 
 // Behind a reverse proxy/load balancer, set TRUST_PROXY=1 so rate limiting and
 // client IPs are correct. 0 (trust nothing) is the safe default for direct exposure.
@@ -80,6 +99,28 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '2mb' }));
+
+// Malformed-JSON guard, mounted immediately after the parser so it runs BEFORE
+// anything can log the error.
+//
+// body-parser attaches the entire raw request body to the error it throws
+// (`createError(400, err, { body: <raw string> })`). The credential endpoints are
+// fed by JSON bodies — {"token":"ghp_..."}, {"botToken":"xoxb-..."} — so an admin
+// onboarding with curl/Postman, or a token pasted with a stray smart quote, would
+// send an unparseable body whose raw text lands in the log stream via the global
+// `{ err }` handler. Field-name redaction cannot help: at that point the secret is
+// one opaque string, not a named field. Drop the body and answer here.
+app.use((err, req, res, next) => {
+  if (err?.type === 'entity.parse.failed') {
+    delete err.body;
+    return res.status(400).json({ success: false, error: 'Request body is not valid JSON.' });
+  }
+  if (err?.type === 'entity.too.large') {
+    delete err.body;
+    return res.status(413).json({ success: false, error: 'Request body too large.' });
+  }
+  return next(err);
+});
 
 // Parses Clerk session JWTs (Authorization: Bearer) into req auth state.
 // Enforcement happens per-router via requireOrg below.

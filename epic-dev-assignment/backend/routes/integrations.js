@@ -271,14 +271,24 @@ router.get('/integrations/slack', async (req, res) => {
         // Credentials saved here, independent of whether the bot is running.
         credentialsStored: !!stored.connected,
         teamName: stored.teamName || null,
-        analyzerUrl: stored.analyzerUrl || null,
+        // The analyzer URL is a webhook endpoint, and for every common provider
+        // (hooks.slack.com/services/…, Zapier, Make, n8n) the PATH ITSELF is the
+        // credential — anyone holding the URL can post as you. Returning it to
+        // every org member contradicted the write-only rule the rest of this file
+        // follows, so only the host is surfaced; the UI needs no more than that.
+        analyzerConfigured: !!stored.analyzerConfigured,
+        analyzerHost: stored.analyzerHost || null,
         tokenSuffix: stored.tokenSuffix || null,
 
         reachable: bot.reachable,
         authorized: bot.authorized !== false,
         connected: !!(bot.reachable && bot.authorized !== false && bot.configured?.slack),
-        workspace: bot.workspace || null,
-        boundOrgId: bot.orgId || null,
+        // Only ever reveal the bot's workspace when it is bound to the CALLER's
+        // org. The bot serves one org (D6) and answers with that org's details
+        // regardless of who asks, so echoing them unconditionally handed any
+        // signed-in member of any tenant another tenant's Clerk org id and Slack
+        // workspace name.
+        workspace: boundToThisOrg ? (bot.workspace || null) : null,
         boundToThisOrg,
         reminder: bot.reminder || null,
         jiraProjectKey: bot.jiraProjectKey || null,
