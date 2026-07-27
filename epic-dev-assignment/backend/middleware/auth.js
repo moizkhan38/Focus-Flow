@@ -1,4 +1,5 @@
 import { getAuth } from '@clerk/express';
+import { timingSafeEqual } from 'node:crypto';
 
 // ─── Clerk org enforcement ───────────────────────────────────────────────────
 // Every business route requires BOTH a signed-in user and an active organization.
@@ -30,9 +31,15 @@ export function requireOrgAdmin(req, res, next) {
 // The bot is a trusted server-side caller with no Clerk session. It authenticates
 // with the shared INTERNAL_API_KEY and declares which org it writes into via
 // X-Org-Id (its per-deployment binding, see STANDUP_ORG_ID in the bot's env).
+// Constant-time comparison: `===` on secrets returns as soon as bytes differ, so
+// response timing leaks how much of a guessed key was correct. Lengths are
+// compared first because timingSafeEqual throws on a length mismatch, and length
+// alone is not the secret.
 function validInternalKey(req) {
   const configured = process.env.INTERNAL_API_KEY || '';
-  return configured && req.get('X-Internal-Key') === configured;
+  const provided = req.get('X-Internal-Key') || '';
+  if (!configured || provided.length !== configured.length) return false;
+  return timingSafeEqual(Buffer.from(provided), Buffer.from(configured));
 }
 
 // The internal key is shared with the Flask service and the standup bot, and the

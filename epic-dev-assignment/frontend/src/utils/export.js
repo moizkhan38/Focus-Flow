@@ -27,7 +27,17 @@ export function exportToCSV(report) {
     ]),
   ];
 
-  const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+  // CSV formula injection: Excel and Sheets execute a cell that begins with
+  // = + - @ (or tab/CR), so a Jira summary like `=HYPERLINK("http://evil","click")`
+  // — text any Jira user can write — would run when a teammate opens the export.
+  // Quoting alone does not prevent it; the leading character must be neutralised.
+  const csvCell = (c) => {
+    const s = String(c ?? '');
+    const escaped = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+    return `"${escaped.replace(/"/g, '""')}"`;
+  };
+
+  const csv = rows.map((r) => r.map(csvCell).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

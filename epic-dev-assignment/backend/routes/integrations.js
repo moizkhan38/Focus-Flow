@@ -34,6 +34,43 @@ function normalizeDomain(raw) {
     .toLowerCase();
 }
 
+// The Slack analyzer URL is supplied by an org admin and the standup bot then
+// POSTs standup content to it from INSIDE the private service network. Without
+// validation that is a blind SSRF sink: a tenant could point it at
+// http://169.254.169.254/ (cloud metadata), at Postgres, or at another internal
+// service, and use the bot as a proxy to reach things the internet cannot.
+//
+// Hostname checks cannot be airtight — DNS can resolve a public name to a private
+// address, and can change between this check and the bot's request. This blocks
+// the obvious cases and forces https so the payload is not sent in the clear.
+// Egress restrictions on the bot's network are the real control.
+const PRIVATE_HOST_RE = new RegExp(
+  [
+    '^localhost$', '^127\\.', '^0\\.', '^10\\.', '^192\\.168\\.',
+    '^172\\.(1[6-9]|2[0-9]|3[01])\\.',      // 172.16.0.0/12
+    '^169\\.254\\.',                         // link-local + cloud metadata
+    '^\\[?::1\\]?$', '^\\[?f[cd]',           // IPv6 loopback + unique-local
+    '\\.internal$', '\\.local$', '\\.localdomain$',
+  ].join('|'),
+  'i'
+);
+
+function validateOutboundUrl(raw) {
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    return 'That is not a valid URL.';
+  }
+  if (u.protocol !== 'https:') {
+    return 'Analyzer URL must use https:// — standup content is sent to it.';
+  }
+  if (PRIVATE_HOST_RE.test(u.hostname)) {
+    return 'That host is not reachable from the standup service (private or link-local address).';
+  }
+  return null;
+}
+
 function parseJiraError(body, status) {
   if (body?.errorMessages?.length) return body.errorMessages[0];
   if (body?.errors && Object.keys(body.errors).length) return Object.values(body.errors).join(', ');
@@ -185,8 +222,9 @@ router.put('/integrations/slack', requireOrgAdmin, async (req, res) => {
         error: 'Expected a bot token starting with "xoxb-". Copy the Bot User OAuth Token, not the app or user token.',
       });
     }
-    if (analyzerUrl && !/^https?:\/\//i.test(analyzerUrl)) {
-      return res.status(400).json({ success: false, error: 'Analyzer URL must start with http:// or https://' });
+    if (analyzerUrl) {
+      const urlError = validateOutboundUrl(analyzerUrl);
+      if (urlError) return res.status(400).json({ success: false, error: urlError });
     }
 
     const test = await testSlack({ botToken });

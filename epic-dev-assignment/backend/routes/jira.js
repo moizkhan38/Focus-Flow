@@ -152,7 +152,7 @@ router.put('/jira/issue/:issueKey', async (req, res) => {
     await jira.transitionIssue(req.params.issueKey, transitionId);
     // Broadcast to all clients watching this project so their kanban refreshes instantly
     const projectKey = req.params.issueKey.split('-')[0];
-    emitToProject(projectKey, 'issue:changed', { key: req.params.issueKey });
+    emitToProject(req.orgId, projectKey, 'issue:changed', { key: req.params.issueKey });
     res.json({ ok: true });
   } catch (err) {
     sendUpstreamError(res, err);
@@ -174,7 +174,7 @@ router.put('/jira/issue/:issueKey/assign', async (req, res) => {
 
     await jira.assignIssue(req.params.issueKey, users[0].accountId);
     const projectKey = req.params.issueKey.split('-')[0];
-    emitToProject(projectKey, 'issue:changed', { key: req.params.issueKey });
+    emitToProject(req.orgId, projectKey, 'issue:changed', { key: req.params.issueKey });
     res.json({ ok: true, assignee: { name: users[0].displayName, accountId: users[0].accountId } });
   } catch (err) {
     sendUpstreamError(res, err);

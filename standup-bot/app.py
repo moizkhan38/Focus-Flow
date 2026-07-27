@@ -2,6 +2,7 @@ import os
 import re
 import json
 import logging
+import hmac
 from concurrent.futures import ThreadPoolExecutor
 import requests
 from datetime import datetime, date
@@ -70,17 +71,37 @@ def _gate_requests():
         if not verifier.is_valid_request(request.get_data(), dict(request.headers)):
             return jsonify({"error": "invalid Slack signature"}), 401
         return None
-    # Internal server-to-server endpoints (Express → bot). No-op when key unset (dev).
+    # Internal server-to-server endpoints (Express → bot).
     if path == "/api/standup" or path.startswith("/api/standup/"):
-        if INTERNAL_API_KEY and request.headers.get("X-Internal-Key") != INTERNAL_API_KEY:
+        # FAIL CLOSED. This used to be `if INTERNAL_API_KEY and ...`, which meant
+        # an unset key disabled the check entirely — on the one service that must
+        # be reachable from the internet for Slack. A missing key is now a refusal
+        # in production, and only tolerated when FLASK_DEBUG is on.
+        if not INTERNAL_API_KEY:
+            if FLASK_DEBUG:
+                return None
+            return jsonify({"error": "internal key not configured"}), 503
+        if not hmac.compare_digest(
+            request.headers.get("X-Internal-Key", ""), INTERNAL_API_KEY
+        ):
             return jsonify({"error": "unauthorized"}), 401
         return None
     # Test/admin endpoints: hidden (404) unless an admin key is set AND matches.
     if path.startswith("/test/"):
-        if not ADMIN_API_KEY or request.headers.get("X-Admin-Key") != ADMIN_API_KEY:
+        if not ADMIN_API_KEY or not hmac.compare_digest(
+            request.headers.get("X-Admin-Key", ""), ADMIN_API_KEY
+        ):
             return jsonify({"error": "not found"}), 404
         return None
-    return None
+    # Health probe stays open — no dependencies, no data.
+    if path == "/api/health":
+        return None
+
+    # DEFAULT CLOSED. Anything not matched above is refused rather than served.
+    # This service is internet-facing, and the previous `return None` fallthrough
+    # meant any route not explicitly listed — /analyze/standup, and any route
+    # added later — was reachable by anyone with the URL.
+    return jsonify({"error": "not found"}), 404
 
 
 # ─── Slack credential resolution ─────────────────────────────────────────────

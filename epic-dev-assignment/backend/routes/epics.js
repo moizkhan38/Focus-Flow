@@ -133,7 +133,14 @@ router.post('/regenerate', aiLimiter, async (req, res) => {
 });
 
 // POST /api/classify-epics - Classify epic types
-router.post('/classify-epics', async (req, res) => {
+//
+// aiLimiter applies here too. This fans out one Gemini call PER EPIC on the
+// shared platform key (D5), so without a limit and a cap on the array, a single
+// authenticated request could spend the platform's quota — and the bill — on
+// behalf of every tenant.
+const MAX_EPICS_PER_CLASSIFY = 50;
+
+router.post('/classify-epics', aiLimiter, async (req, res) => {
   try {
     const { epics } = req.body;
 
@@ -141,6 +148,13 @@ router.post('/classify-epics', async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'Epics array is required'
+      });
+    }
+
+    if (epics.length > MAX_EPICS_PER_CLASSIFY) {
+      return res.status(400).json({
+        success: false,
+        error: `Too many epics in one request (max ${MAX_EPICS_PER_CLASSIFY}).`
       });
     }
 

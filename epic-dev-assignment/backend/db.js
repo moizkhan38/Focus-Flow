@@ -14,9 +14,30 @@ if (!connectionString) {
   process.exit(1);
 }
 
-// Managed Postgres (RDS, Supabase, Neon, Heroku, Azure) requires TLS and
-// usually presents a self-signed chain. Enable with DATABASE_SSL=true.
-const ssl = process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined;
+// Managed Postgres (RDS, Supabase, Neon, Heroku, Azure) requires TLS.
+//
+// DATABASE_SSL=true previously meant TLS with certificate verification DISABLED,
+// which encrypts the link but authenticates nothing — anyone who can intercept
+// the connection can present their own certificate and read or rewrite every
+// query, credentials included. Verification is now the default.
+//
+// Providers that present a self-signed chain need their CA supplied via
+// DATABASE_CA (PEM). DATABASE_SSL_INSECURE=true restores the old unverified
+// behaviour as a deliberate, named escape hatch — it logs a warning so it cannot
+// be switched on and forgotten.
+function buildSsl() {
+  if (process.env.DATABASE_SSL !== 'true') return undefined;
+  if (process.env.DATABASE_SSL_INSECURE === 'true') {
+    console.warn(
+      '[DB] DATABASE_SSL_INSECURE=true — TLS certificate verification is OFF. ' +
+      'The connection is encrypted but NOT authenticated. Supply DATABASE_CA instead.'
+    );
+    return { rejectUnauthorized: false };
+  }
+  const ca = process.env.DATABASE_CA;
+  return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
+}
+const ssl = buildSsl();
 
 export const pool = new Pool({
   connectionString,

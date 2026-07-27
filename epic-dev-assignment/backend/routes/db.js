@@ -52,11 +52,19 @@ router.post('/db/standups', orgOrInternal, async (req, res) => {
 router.get('/db/standups', orgOrInternal, async (req, res) => {
   try {
     const { user_id, project_key, since, limit = 100 } = req.query;
+
+    // An org is REQUIRED. This previously read unscoped when an internal caller
+    // omitted X-Org-Id — the "trusted server lane" — which meant anyone holding
+    // the shared internal key could dump every tenant's standups by simply not
+    // sending the header. The bot always sends it, so nothing legitimate relied
+    // on the unscoped path.
+    if (!req.orgId) {
+      return res.status(400).json({ error: 'X-Org-Id is required (reads are org-scoped)' });
+    }
+
     const conds = [];
     const params = [];
-    // Internal callers without an org binding read unscoped (trusted server lane);
-    // every org-bound caller (Clerk session or bot with X-Org-Id) is scoped.
-    if (req.orgId) { params.push(req.orgId); conds.push(`org_id = $${params.length}`); }
+    params.push(req.orgId); conds.push(`org_id = $${params.length}`);
     if (user_id)     { params.push(user_id); conds.push(`user_id = $${params.length}`); }
     if (project_key) { params.push(project_key); conds.push(`project_key = $${params.length}`); }
     if (since)       { params.push(since); conds.push(`timestamp >= $${params.length}`); }

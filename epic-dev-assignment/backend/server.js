@@ -20,7 +20,7 @@ import standupRouter from './routes/standup.js';
 import dbRouter from './routes/db.js';
 import integrationsRouter from './routes/integrations.js';
 import { ping as pingDb, pool, query } from './db.js';
-import { setIo } from './io.js';
+import { setIo, projectRoom } from './io.js';
 import { assertMasterKey } from './services/cryptoService.js';
 import { logger, httpLogger } from './logger.js';
 
@@ -103,8 +103,20 @@ app.get('/api/health', (req, res) => {
 // Readiness — checks dependencies (Postgres). Used by load balancers/orchestrators
 // to decide whether to ROUTE TRAFFIC here: 200 when the DB is reachable, 503 when
 // not (so a booting/DB-less instance is pulled from rotation without being killed).
+// Result is cached briefly: the probe is public and sits ahead of the rate
+// limiter (so orchestrators are never throttled), and it runs a query per call —
+// which made it a free way for anyone on the internet to exhaust the connection
+// pool. Orchestrators poll every few seconds, so a 2s cache costs them nothing
+// while collapsing a flood into one query.
+let readyCache = { at: 0, ok: false };
+const READY_TTL_MS = 2000;
+
 app.get('/api/ready', async (req, res) => {
-  const dbOk = await pingDb();
+  const now = Date.now();
+  if (now - readyCache.at > READY_TTL_MS) {
+    readyCache = { at: now, ok: await pingDb() };
+  }
+  const dbOk = readyCache.ok;
   res.status(dbOk ? 200 : 503).json({ status: dbOk ? 'ready' : 'not ready', db: dbOk });
 });
 
@@ -214,13 +226,17 @@ io.on('connection', (socket) => {
         'SELECT 1 FROM projects WHERE jira_project_key = $1 AND org_id = $2 LIMIT 1',
         [key, socket.orgId]
       );
-      if (rows.length > 0) socket.join(`project:${key}`);
+      // Room name is org-scoped: two orgs can both own a project keyed 'SCRUM'
+      // (a Jira default), and an unscoped room would put them in the same one.
+      if (rows.length > 0) socket.join(projectRoom(socket.orgId, key));
     } catch {
       // deny on error — no room join
     }
   });
   socket.on('leave', (projectKey) => {
-    if (typeof projectKey === 'string') socket.leave(`project:${projectKey.toUpperCase()}`);
+    if (typeof projectKey === 'string') {
+      socket.leave(projectRoom(socket.orgId, projectKey.toUpperCase()));
+    }
   });
 });
 
