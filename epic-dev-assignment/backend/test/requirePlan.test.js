@@ -166,10 +166,33 @@ test('a billing outage degrades to the free tier, not to open access', async () 
   assert.equal((await run(requireAiQuota, reqFor())).code, 200, 'free-tier work must keep functioning');
 });
 
-test('entitlement is read from namespaced Clerk claims', async () => {
-  // Clerk emits "org:jira_sync"; the code must not require an exact-string match
-  // on the bare slug or every gate silently fails closed for paying customers.
-  const req = { orgId: 'org_claims', auth: { sessionClaims: { fea: ['org:jira_sync'] } } };
+test('entitlement is read from scope-prefixed Clerk claims', async () => {
+  // Clerk's `fea` claim scope-prefixes each slug ("o:" for org, "u:" for user).
+  // The code must strip that, or every gate silently fails closed for paying
+  // customers — the worst failure mode: they paid and got nothing.
+  const req = { orgId: 'org_claims_a', auth: { sessionClaims: { fea: ['o:jira_sync'] } } };
   assert.equal(await billing.hasFeature(req, 'jira_sync'), true);
   assert.equal(await billing.hasFeature(req, 'standup_bot'), false);
+});
+
+test('bare (unprefixed) feature claims also resolve', async () => {
+  const req = { orgId: 'org_claims_b', auth: { sessionClaims: { fea: 'standup_bot,unlimited_ai' } } };
+  assert.equal(await billing.hasFeature(req, 'standup_bot'), true);
+  assert.equal(await billing.hasFeature(req, 'unlimited_ai'), true);
+  assert.equal(await billing.hasFeature(req, 'jira_sync'), false);
+});
+
+test('has() is called with the BARE slug, never namespaced with org:', async () => {
+  // Clerk reserves "org:" for custom permissions. Passing "org:jira_sync" to
+  // has({ feature }) never matches, so a paying org would be refused.
+  const seen = [];
+  const req = {
+    orgId: 'org_has',
+    auth: {
+      sessionClaims: {},
+      has: (params) => { seen.push(params); return params.feature === 'jira_sync'; },
+    },
+  };
+  assert.equal(await billing.hasFeature(req, 'jira_sync'), true);
+  assert.deepEqual(seen, [{ feature: 'jira_sync' }]);
 });

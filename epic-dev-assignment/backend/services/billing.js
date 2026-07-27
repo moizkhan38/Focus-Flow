@@ -110,8 +110,13 @@ function firstOf(list) {
 
 export async function hasFeature(req, feature) {
   // req.auth.has() is the cheapest path when Clerk put billing in the token.
+  //
+  // The slug is passed BARE. Clerk's has() does not want the "org:" namespace —
+  // that prefix belongs to custom permissions (org:teams:manage), not features.
+  // Passing "org:jira_sync" here silently never matches, which fails closed and
+  // would have refused paying customers their features.
   try {
-    if (typeof req.auth?.has === 'function' && req.auth.has({ feature: `org:${feature}` })) {
+    if (typeof req.auth?.has === 'function' && req.auth.has({ feature })) {
       return true;
     }
   } catch {

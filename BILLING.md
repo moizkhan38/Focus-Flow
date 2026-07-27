@@ -12,20 +12,35 @@ repo. Clerk owns *entitlement*; we own *metering* (`org_usage`).
 
 ## 1. Turn on Billing in the Clerk dashboard
 
-1. Clerk dashboard → **Billing** → enable it for **Organizations**.
-2. Connect a Stripe account. On a **development** instance this uses Stripe
-   **test mode**, so you can complete a real checkout with card `4242 4242 4242
-   4242` without money moving.
+Clerk dashboard → **Billing Settings** → follow the guided setup, choosing
+**organizations** (B2B) rather than users.
 
-> Until this is done, `/api/billing/status` reports every org as `free` and the
-> backend logs `[Billing] entitlement lookup failed — treating as free`. That is
-> the intended failure mode: a billing outage must never hand out paid features.
+There is a CLI shortcut that does the same thing:
+
+```bash
+npx clerk@latest enable billing --for orgs
+```
+
+**Payment gateway.** Clerk offers two:
+
+- **Clerk development gateway** — a shared test Stripe account, available on
+  development instances. Pick this to build and demo: no Stripe account of your
+  own, no business details, nothing to verify.
+- **Your own Stripe account** — required for production. A development Stripe
+  account cannot be promoted to production; production needs its own.
+
+> Until Billing is enabled, `/api/billing/status` reports every org as `free` and
+> the backend logs `[Billing] entitlement lookup failed — treating as free`. That
+> is the intended failure mode: a billing outage must never hand out paid
+> features.
 
 ## 2. Create the features
 
-Clerk → **Billing → Features**. The slugs must match exactly — the code gates on
-features, not on plan names, so you can rename or repackage plans later without
-touching code.
+Clerk → **Subscription plans** → open a plan → **Features** → **Add Feature**.
+(Features can also be added while creating the plan.)
+
+The slugs must match exactly — the code gates on features, not plan names, so you
+can rename or repackage plans later without touching code.
 
 | Slug | Unlocks |
 |---|---|
@@ -36,12 +51,18 @@ touching code.
 
 ## 3. Create the plans
 
-Clerk → **Billing → Plans**, scoped to **Organizations**.
+Clerk → **Subscription plans** → **Plans for Organizations** tab → **Add Plan**.
+The tab matters: a plan created under the user tab bills individuals and this app
+will never see it.
 
 | Plan | Slug | Price | Features |
 |---|---|---|---|
 | Free | `free` | 0 | *(none)* |
 | Pro | `pro` | your price | all four above |
+
+Leave **Publicly available** ON for both. Switched off, a plan or feature is
+hidden from `<PricingTable />` — the plans page would render empty and nobody
+could subscribe.
 
 Anything without a paid feature falls back to the free allowances below. A third
 tier is just another plan with the same feature slugs — no code change.
@@ -100,15 +121,29 @@ did nothing. Two things prevent that:
 
 ## Testing a paid org without paying
 
-On a development instance, complete a checkout with Stripe's test card
-`4242 4242 4242 4242`, any future expiry, any CVC. To exercise the guards without
-Clerk at all, run the suite: `npm test` covers free/paid, every quota boundary,
-the upsert-vs-create distinction, and the billing-outage fallback.
+On a development instance (Clerk development gateway), subscribe with Stripe's
+test card `4242 4242 4242 4242`, any future expiry, any CVC, any postcode. No
+money moves.
+
+To exercise the guards without Clerk at all, run `npm test` — it covers free vs
+paid, every quota boundary, the upsert-vs-create distinction, scope-prefixed
+claims, and the billing-outage fallback.
+
+## Feature slugs are passed bare, not namespaced
+
+`has({ feature: 'jira_sync' })` — **not** `has({ feature: 'org:jira_sync' })`.
+The `org:` prefix belongs to custom permissions (`org:teams:manage`), and passing
+it to a feature check silently never matches. That fails closed, which is the
+worst possible direction: a customer pays and still gets refused.
+
+The raw `fea` session claim *is* scope-prefixed (`o:` for org, `u:` for user);
+`services/billing.js` strips that when reading claims directly. Both forms are
+covered by tests.
 
 ## Going live
 
-Billing on a **development** Clerk instance is Stripe test mode — no real
+Billing on a **development** Clerk instance uses a test gateway — no real
 charges. Before taking money you need a **production** Clerk instance (`pk_live`
-/ `sk_live`) with Billing enabled and a live Stripe account connected. The plans
-and features must be recreated there; dashboard configuration does not carry
-across instances.
+/ `sk_live`) with Billing enabled and your own live Stripe account connected.
+Plans and features must be recreated there: dashboard configuration does not
+carry across instances, and a development Stripe account cannot be reused.
