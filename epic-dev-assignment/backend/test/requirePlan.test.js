@@ -283,6 +283,28 @@ test('a mid-tier plan gets exactly its own features, not a cumulative ladder', a
   assert.equal((await run(requireFeature(billing.FEATURES.STANDUP_BOT), basic)).code, 402);
 });
 
+test('an org SUBSCRIBED to Clerk\'s empty Free plan gets the free tier', async () => {
+  // Clerk creates a default Free plan carrying no features. That is a different
+  // state from "no subscription" — the token says pla: free — and both must land
+  // on the same allowances, or whichever one the dashboard produces would be wrong.
+  developerCount = 2;
+  const onFreePlan = { orgId: 'org_on_free', auth: { sessionClaims: { pla: 'o:free', fea: '' } } };
+  const status = await billing.billingStatus(onFreePlan);
+
+  assert.equal(status.plan, 'free');
+  assert.equal(status.isPaid, false);
+  assert.equal(status.usage.projects.limit, billing.FREE_LIMITS.projects);
+  assert.equal(status.usage.developers.limit, billing.FREE_LIMITS.developers);
+  assert.equal(status.usage.aiGenerations.limit, billing.FREE_LIMITS.aiGenerationsPerMonth);
+  assert.equal(status.features.jira_sync, false);
+  assert.equal(status.features.standup_bot, false);
+
+  // And the gates agree.
+  assert.equal((await run(requireFeature(billing.FEATURES.JIRA_SYNC), onFreePlan)).code, 402);
+  developerCount = billing.FREE_LIMITS.developers;
+  assert.equal((await run(requireDeveloperQuota, { ...onFreePlan, body: { username: 'new' } })).code, 402);
+});
+
 test('an unsubscribed org gets the free tier without any "free" plan existing', async () => {
   const status = await billing.billingStatus(reqFor());
   assert.equal(status.isPaid, false);

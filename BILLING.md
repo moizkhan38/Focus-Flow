@@ -48,8 +48,9 @@ can rename or repackage plans later without touching code.
 | `standup_bot` | Connecting the Slack standup bot |
 | `unlimited_projects` | Removes the project cap |
 | `unlimited_ai` | Removes the monthly AI generation cap |
-| `members_10` | Raises the team-member cap to 10 |
 | `members_25` | Raises the team-member cap to 25 |
+
+These go on the **paid** plan only. The Free plan stays empty — see below.
 
 ### Tiered numbers live in the slug
 
@@ -68,36 +69,37 @@ Clerk → **Subscription plans** → **Plans for Organizations** tab → **Add P
 The tab matters: a plan created under the user tab bills individuals and this app
 will never see it.
 
-**Do not create a "Free" plan.** Clerk enforces a $1 minimum price, so a literal
-$0 plan cannot exist — and it isn't needed. An organization with no subscription
-resolves to `plan: 'free'` with no features, which *is* the free tier. Creating a
-cheap plan and calling it Free would charge people for the free allowances.
+**Clerk creates a default `Free` plan.** Leave it exactly as it is: **no features,
+no price.** Its emptiness is what makes it the free tier — every allowance below
+applies precisely because the plan grants nothing.
 
-Two paid tiers, split so the upgrade has an obvious reason: **Basic** makes the
-AI tool usable without limits; **Pro** connects it to the team's actual stack.
+That default also sidesteps Clerk's $1 minimum on plans you create yourself. Do
+not build your own free plan: the cheapest you could make it is $1, so it would
+charge people for the free allowances.
+
+You only need to create **one** plan.
 
 | Plan | Key | Price | Features |
 |---|---|---|---|
-| Basic | `basic` | e.g. $10/mo | `unlimited_ai`, `unlimited_projects`, `members_10` |
-| Pro | `pro` | e.g. $29/mo | the above **plus** `jira_sync`, `standup_bot`, `members_25` |
+| Free | `free` | $0 | **none** — Clerk's default, don't touch it |
+| Pro | `pro` | your price (min $1) | all five slugs above |
 
-Pro must list **every** slug it should grant, not just the ones Basic lacks:
-entitlement is the feature set of the subscribed plan, not a cumulative ladder. A
-Pro plan carrying only `jira_sync`, `standup_bot` and `members_25` would re-impose
-the project and AI caps on your most expensive customers.
-
-Give Pro `members_25` **and** leave Basic on `members_10` — do not put both slugs
-on one plan expecting them to add up. They don't; the highest simply wins.
+Pro must list **every** slug it should grant. Entitlement is the feature set of
+the subscribed plan, not a cumulative ladder over Free.
 
 Resulting tiers:
 
-| | Free (no subscription) | Basic | Pro |
-|---|---|---|---|
-| Projects | 2 | unlimited | unlimited |
-| Team members | 5 | 10 | 25 |
-| AI generations | 20/month | unlimited | unlimited |
-| Jira sync + boards | — | — | ✓ |
-| Slack standup bot | — | — | ✓ |
+| | Free | Pro |
+|---|---|---|
+| Projects | 2 | unlimited |
+| Team members | 5 | 25 |
+| AI generations | 20/month | unlimited |
+| Jira sync + boards | — | ✓ |
+| Slack standup bot | — | ✓ |
+
+Adding a middle tier later is dashboard-only: another plan carrying a subset —
+say `unlimited_ai`, `unlimited_projects`, `members_10`. The `members_<n>` slug
+means no code has to change to introduce a new member cap.
 
 Leave **Publicly available** ON for both. Switched off, a plan is hidden from
 `<PricingTable />` — the billing page renders empty and nobody can subscribe.
