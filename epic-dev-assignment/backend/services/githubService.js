@@ -186,7 +186,108 @@ export function createGithubClient(token) {
     return await response.json();
   }
 
-  return { analyzeDeveloper };
+  // ─── Repository provisioning ─────────────────────────────────────────────
+  // Used when a project is created: one repo per project, with the project's
+  // team added as push-capable collaborators.
+
+  const jsonHeaders = {
+    ...headers,
+    Accept: 'application/vnd.github+json',
+    'Content-Type': 'application/json',
+    'User-Agent': 'FocusFlow',
+  };
+
+  async function ghError(response, fallback) {
+    const body = await response.json().catch(() => ({}));
+    // GitHub nests the useful part in errors[] — "name already exists on this
+    // account" lives there, not in `message`, which just says "Validation Failed".
+    const detail = (body.errors || []).map((e) => e.message || e.field).filter(Boolean).join('; ');
+    return new Error(detail || body.message || fallback);
+  }
+
+  // The account the token belongs to. Repos are created here unless the org
+  // configured a GitHub organization to own them.
+  async function getAuthenticatedUser() {
+    const response = await fetch(`${GITHUB_API_BASE}/user`, { headers: jsonHeaders });
+    if (!response.ok) throw await ghError(response, 'Could not identify the GitHub token owner');
+    const user = await response.json();
+    return { login: user.login, type: user.type };
+  }
+
+  async function getRepo(owner, repo) {
+    const response = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}`, { headers: jsonHeaders });
+    if (response.status === 404) return null;
+    if (!response.ok) throw await ghError(response, `Could not read ${owner}/${repo}`);
+    return await response.json();
+  }
+
+  // Create under a GitHub organization when one is given, otherwise under the
+  // token owner's own account — those are different endpoints.
+  async function createRepo({ owner, name, description, isPrivate = true, autoInit = true }) {
+    const url = owner
+      ? `${GITHUB_API_BASE}/orgs/${owner}/repos`
+      : `${GITHUB_API_BASE}/user/repos`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        name,
+        description: description || undefined,
+        private: isPrivate,
+        // Without a first commit the repo has no default branch, so collaborators
+        // cannot clone it and branch protection cannot be configured later.
+        auto_init: autoInit,
+      }),
+    });
+
+    if (!response.ok) throw await ghError(response, `Could not create repository "${name}"`);
+    return await response.json();
+  }
+
+  // Grant push access. GitHub sends an INVITATION for outside collaborators —
+  // 201 with an invitation body — which the person must accept before they can
+  // push. Existing collaborators return 204. Both are success.
+  async function addCollaborator(owner, repo, username, permission = 'push') {
+    const response = await fetch(
+      `${GITHUB_API_BASE}/repos/${owner}/${repo}/collaborators/${encodeURIComponent(username)}`,
+      { method: 'PUT', headers: jsonHeaders, body: JSON.stringify({ permission }) }
+    );
+
+    if (response.status === 204) return { status: 'already_member' };
+    if (response.status === 201) {
+      const invite = await response.json().catch(() => ({}));
+      return { status: 'invited', invitationId: invite.id || null };
+    }
+    if (response.status === 404) {
+      return { status: 'failed', error: `GitHub user "${username}" not found` };
+    }
+    const err = await ghError(response, `Could not add ${username}`);
+    return { status: 'failed', error: err.message };
+  }
+
+  return {
+    analyzeDeveloper,
+    getAuthenticatedUser,
+    getRepo,
+    createRepo,
+    addCollaborator,
+  };
+}
+
+// A GitHub repository name may contain only letters, digits, '.', '-' and '_'.
+// Anything else is replaced rather than dropped, so "E-Commerce Platform" reads
+// as "e-commerce-platform" instead of "ecommerceplatform".
+export function toRepoName(projectName) {
+  const slug = String(projectName || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^[-._]+|[-._]+$/g, '')
+    .slice(0, 100);
+  // '.' and '..' are reserved, and an empty name would 422 on create.
+  return slug && slug !== '.' && slug !== '..' ? slug : '';
 }
 
 // ─── Credential-free helpers (shared by every client) ───────────────────────

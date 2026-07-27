@@ -11,7 +11,8 @@ import {
   ArrowLeft, ArrowRight, Columns3, Users, BookOpen, CheckCircle2, Clock, AlertTriangle,
   TrendingUp, TrendingDown, BarChart3, ChevronDown, ExternalLink, RefreshCw,
   Target, Layers, GitBranch, Activity, Calendar, Shield, Flame, Bug,
-  ClipboardCheck, UserPlus, LayoutDashboard, FileText, Trophy, Pencil
+  ClipboardCheck, UserPlus, LayoutDashboard, FileText, Trophy, Pencil,
+  Github, Lock,
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis,
@@ -1573,6 +1574,19 @@ function ProjectDetailPageInner() {
               <span className={`rounded-full px-3 py-1 text-xs font-medium ${cfg.color}`}>{cfg.label}</span>
               {project.jiraProjectKey && (
                 <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-mono font-medium text-blue-600">{project.jiraProjectKey}</span>
+              )}
+              {project.githubRepo?.url && (
+                <a
+                  href={project.githubRepo.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={`${project.githubRepo.fullName} — where this project's code lives`}
+                  className="flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-mono font-medium text-gray-700 transition-colors hover:bg-gray-200"
+                >
+                  <Github className="h-3 w-3" />
+                  {project.githubRepo.fullName}
+                  {project.githubRepo.private && <Lock className="h-2.5 w-2.5 text-gray-400" />}
+                </a>
               )}
             </div>
             {(project.rawText || project.description) && (

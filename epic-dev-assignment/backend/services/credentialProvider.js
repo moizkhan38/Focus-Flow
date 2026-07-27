@@ -59,6 +59,14 @@ export async function getGithubToken(orgId) {
   return p ? p.token || null : null;
 }
 
+// OPTIONAL GitHub organization that should own repositories created for this
+// org's projects. null means "the token owner's own account" — the two are
+// different GitHub endpoints, so the caller has to know which.
+export async function getGithubOwner(orgId) {
+  const p = await getPayload(orgId, 'github');
+  return p ? p.owner || null : null;
+}
+
 // OPTIONAL per-org Gemini key (D5: the platform key remains the default).
 // Returns null when the org hasn't connected one, which the caller treats as
 // "use the platform key" rather than as an error.
@@ -146,7 +154,12 @@ export async function getStatus(orgId) {
       ? { connected: true, domain: jira.domain, email: jira.email }
       : { connected: false },
     github: github
-      ? { connected: true, login: github.login || null, tokenSuffix: (github.token || '').slice(-4) }
+      ? {
+          connected: true,
+          login: github.login || null,
+          owner: github.owner || null, // GitHub org that owns created repos
+          tokenSuffix: (github.token || '').slice(-4),
+        }
       : { connected: false },
     slack: slack
       ? {

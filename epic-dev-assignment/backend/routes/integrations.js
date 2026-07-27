@@ -353,11 +353,20 @@ router.put('/integrations/github', requireOrgAdmin, async (req, res) => {
     if (!token) {
       return res.status(400).json({ success: false, error: 'A GitHub personal access token is required' });
     }
+    // Optional: the GitHub ORGANIZATION that should own repositories created for
+    // this tenant's projects. Blank means the token owner's own account.
+    const owner = String(req.body?.owner || '').trim();
+    if (owner && !/^[A-Za-z0-9-]{1,39}$/.test(owner)) {
+      return res.status(400).json({
+        success: false,
+        error: 'That is not a valid GitHub organization name.',
+      });
+    }
 
     const test = await testGithub({ token });
     if (!test.ok) return res.status(400).json({ success: false, error: test.error });
 
-    await setIntegration(req.orgId, 'github', { token, login: test.login });
+    await setIntegration(req.orgId, 'github', { token, login: test.login, owner: owner || null });
     res.json({ success: true, ...(await getStatus(req.orgId)) });
   } catch (err) {
     sendServerError(res, err);

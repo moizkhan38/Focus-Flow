@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Plug, CheckCircle2, AlertCircle, Loader2, Trash2, ExternalLink,
@@ -508,10 +508,16 @@ function JiraCard({ status, isAdmin, isLoading, onChange }) {
 function GithubCard({ status, isAdmin, isLoading, onChange }) {
   const { notify } = useNotifications();
   const [token, setToken] = useState('');
+  const [owner, setOwner] = useState('');
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState('');
 
   const connected = status?.connected;
+
+  // Show the saved organization once it loads, without stomping on typing.
+  useEffect(() => {
+    if (status?.owner) setOwner(status.owner);
+  }, [status?.owner]);
 
   const handleConnect = async () => {
     setError('');
@@ -520,11 +526,16 @@ function GithubCard({ status, isAdmin, isLoading, onChange }) {
       await apiJson('/api/integrations/github', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: token.trim() }),
+        body: JSON.stringify({ token: token.trim(), owner: owner.trim() }),
       });
       setToken('');
       await onChange();
-      notify.success('GitHub connected', 'Developer analysis can now read your repositories.');
+      notify.success(
+        'GitHub connected',
+        owner.trim()
+          ? `Project repositories will be created under ${owner.trim()}.`
+          : 'Developer analysis can now read your repositories.'
+      );
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -588,16 +599,22 @@ function GithubCard({ status, isAdmin, isLoading, onChange }) {
             token if you prefer to scope it to specific repositories.
           </li>
           <li>
-            Tick the <Lit>repo</Lit> scope. Fine-grained equivalent:{' '}
-            <Lit>Contents: Read-only</Lit> plus <Lit>Metadata: Read-only</Lit>.
+            Tick the <Lit>repo</Lit> scope — needed both to read commit history and to create a
+            repository per project. Add <Lit>admin:org</Lit> too if repositories should belong to a
+            GitHub organization rather than your own account.
           </li>
           <li>Set an expiry you're comfortable with, generate, and copy the token.</li>
-          <li>Paste it below and press Connect GitHub.</li>
+          <li>
+            Paste it below. If your team's code lives under a GitHub organization, put its name in
+            the second field.
+          </li>
         </Steps>
         <Gotcha>
-          This token is only used to <strong>read</strong> commit history so developer expertise and
-          experience can be measured — Focus Flow never writes to your repositories. If you only
-          analyse public repos, a token with no scopes ticked is enough.
+          Creating a project creates a <strong>private</strong> repository named after it and invites
+          the project's team with <strong>push</strong> access. Team members receive a GitHub
+          invitation they must accept before they can push. Only developers already on your
+          Developers page can be invited — an arbitrary GitHub username cannot be given access to
+          your code through this app.
         </Gotcha>
       </SetupGuide>
 
@@ -612,6 +629,21 @@ function GithubCard({ status, isAdmin, isLoading, onChange }) {
             value={token}
             onChange={(e) => setToken(e.target.value)}
             placeholder={connected ? '••••••••••••' : 'Paste your GitHub personal access token'}
+            disabled={!isAdmin || !!busy}
+            autoComplete="off"
+          />
+        </Field>
+
+        <Field
+          label="GitHub organization (optional)"
+          hint="Where a new project's repository is created. Leave blank to use the token owner's own account."
+        >
+          <input
+            className={inputCls}
+            type="text"
+            value={owner}
+            onChange={(e) => setOwner(e.target.value)}
+            placeholder="my-company"
             disabled={!isAdmin || !!busy}
             autoComplete="off"
           />

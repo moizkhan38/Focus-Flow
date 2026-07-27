@@ -182,6 +182,46 @@ function WizardContent() {
     return d.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
   })();
 
+  // Provision one GitHub repository per project, with the project's team given
+  // push access.
+  //
+  // Deliberately NON-FATAL: a project that generated fine, assigned fine and
+  // synced to Jira fine must not fail to save because GitHub is unreachable or
+  // the token lacks repo scope. Failures are surfaced as a notification and the
+  // save continues.
+  const createGithubRepo = async (name) => {
+    try {
+      const res = await apiFetch('/api/github/create-repo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectName: name,
+          developers: developers.map((d) => d.username).filter(Boolean),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        // 412 = GitHub simply isn't connected. That's a normal state for an org
+        // that only wanted Jira, not something to alarm them about.
+        if (res.status !== 412) {
+          notify.error('GitHub repository not created', data.error || `Request failed (${res.status})`);
+        }
+        return null;
+      }
+
+      (data.warnings || []).forEach((w) => notify.info('GitHub', w));
+      notify.success(
+        data.created ? 'GitHub repository created' : 'GitHub repository linked',
+        data.repo.fullName
+      );
+      return data.repo;
+    } catch (err) {
+      notify.error('GitHub repository not created', err.message);
+      return null;
+    }
+  };
+
   const handleSaveAndSync = async () => {
     // Step 1 already blocks generation without a name; this is the backstop for a
     // restored draft or a cleared field. Inventing "Untitled Project" here would
@@ -275,6 +315,9 @@ function WizardContent() {
         addDevelopers(devsWithJira);
       }
 
+      setSyncProgress('Creating GitHub repository...');
+      const githubRepo = await createGithubRepo(name);
+
       const projectId = Date.now().toString();
       addProject({
         id: projectId,
@@ -291,6 +334,7 @@ function WizardContent() {
         jiraBoardId: data.jiraBoardId,
         sprintCount: parseInt(sprintCount) || 1,
         sprints: data.sprints || [],
+        githubRepo,
       });
 
       setSyncStatus('success');
@@ -307,7 +351,7 @@ function WizardContent() {
     }
   };
 
-  const handleSaveOnly = () => {
+  const handleSaveOnly = async () => {
     const name = (projectName || '').trim();
     if (!name) {
       setSyncError('This project needs a name before it can be saved. Go back to Step 1 and add one.');
@@ -330,6 +374,10 @@ function WizardContent() {
       addDevelopers(devsWithJira);
     }
 
+    // Same repository provisioning as the Jira path — a project is a project
+    // whether or not it went to Jira, and the team still needs somewhere to push.
+    const githubRepo = await createGithubRepo(name);
+
     const projectId = Date.now().toString();
     addProject({
       id: projectId,
@@ -341,6 +389,7 @@ function WizardContent() {
       assignments: flatAssignments,
       analyzedDevelopers: developers,
       deadline: deadlineValue ? { value: deadlineValue, unit: deadlineUnit } : null,
+      githubRepo,
     });
 
     notify.success('Project Saved', `${name} saved locally`);
