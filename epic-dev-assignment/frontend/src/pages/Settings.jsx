@@ -599,9 +599,9 @@ function GithubCard({ status, isAdmin, isLoading, onChange }) {
             token if you prefer to scope it to specific repositories.
           </li>
           <li>
-            Tick the <Lit>repo</Lit> scope — needed both to read commit history and to create a
-            repository per project. Add <Lit>admin:org</Lit> too if repositories should belong to a
-            GitHub organization rather than your own account.
+            Tick <Lit>repo</Lit> — the single scope that covers everything here: reading commit
+            history, creating a private repository per project, and adding collaborators. No other
+            scope is needed, including for organization-owned repositories.
           </li>
           <li>Set an expiry you're comfortable with, generate, and copy the token.</li>
           <li>
@@ -610,11 +610,19 @@ function GithubCard({ status, isAdmin, isLoading, onChange }) {
           </li>
         </Steps>
         <Gotcha>
+          <strong>Tokens expire.</strong> When one does, every GitHub call returns 401 and developer
+          analysis stops silently — press <Lit>Test</Lit> above to check. Generate a fresh token and
+          paste it here to replace it.
+        </Gotcha>
+        <Gotcha>
           Creating a project creates a <strong>private</strong> repository named after it and invites
           the project's team with <strong>push</strong> access. Team members receive a GitHub
           invitation they must accept before they can push. Only developers already on your
           Developers page can be invited — an arbitrary GitHub username cannot be given access to
           your code through this app.
+          {' '}For an organization-owned repository, the token owner must be allowed to create
+          repositories in that organization, and if the org restricts personal access tokens you
+          must approve this one under the organization's token policy.
         </Gotcha>
       </SetupGuide>
 
