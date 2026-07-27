@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { pool, query } from '../db.js';
 import { encryptJson, decryptJson, envelopeVersion, ENVELOPE_VERSION_OUT } from '../services/cryptoService.js';
+import { confirmTarget } from './confirmTarget.js';
 
 // Re-encrypt stored integration credentials as v2 envelopes, bound to their
 // (org_id, provider) via GCM additional authenticated data.
@@ -21,6 +22,11 @@ import { encryptJson, decryptJson, envelopeVersion, ENVELOPE_VERSION_OUT } from 
 const checkOnly = process.argv.includes('--check');
 
 async function main() {
+  // --check only reads, so it never needs confirming.
+  if (!checkOnly && !(await confirmTarget('Re-encrypting stored integration credentials'))) {
+    process.exitCode = 1;
+    return;
+  }
   const { rows } = await query(
     'SELECT org_id, provider, ciphertext FROM org_integrations ORDER BY org_id, provider'
   );

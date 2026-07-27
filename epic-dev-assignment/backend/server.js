@@ -21,7 +21,7 @@ import dbRouter from './routes/db.js';
 import integrationsRouter from './routes/integrations.js';
 import billingRouter from './routes/billing.js';
 import githubRouter from './routes/github.js';
-import { ping as pingDb, pool, query } from './db.js';
+import { ping as pingDb, pool, query, describeDatabase, databaseLabel } from './db.js';
 import { setIo, projectRoom } from './io.js';
 import { assertMasterKey } from './services/cryptoService.js';
 import { logger, httpLogger } from './logger.js';
@@ -42,6 +42,23 @@ if (!process.env.CLERK_SECRET_KEY) {
 // master key. Fail fast at boot if it's missing/malformed rather than at the
 // first credential save.
 assertMasterKey();
+
+// Say which database this process is attached to, every boot.
+//
+// Credentials, projects and usage all live per-database, so a value saved
+// against one is simply absent from the other. When local dev and the deployed
+// app point at different Postgres instances that presents as a save that
+// silently did nothing — and the only way to tell them apart used to be reading
+// DATABASE_URL by hand.
+{
+  const db = describeDatabase();
+  const line = `[DB] connected to ${databaseLabel()}`;
+  if (db.isLocal) logger.info(line);
+  // A local process attached to a REMOTE database is almost always production
+  // data on a developer's machine. Not wrong — it is a deliberate setup — but it
+  // should never be a surprise.
+  else logger.warn(`${line} — writes from this process affect that database`);
+}
 
 // The internal lane (/api/internal/*) returns DECRYPTED Jira and Slack secrets.
 // It is now fail-closed on the org: unset INTERNAL_ORG_ID disables it outright

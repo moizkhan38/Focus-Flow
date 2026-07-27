@@ -39,6 +39,33 @@ function buildSsl() {
 }
 const ssl = buildSsl();
 
+// Which database is this, in one glance and without leaking the password.
+//
+// Local dev and the deployed app can point at the same Postgres or at different
+// ones, and "which database am I looking at?" is not a question anyone should
+// have to reverse-engineer from a connection string. Getting it wrong wastes
+// real time: a credential saved in one is invisible in the other, and looks for
+// all the world like the save silently failed.
+export function describeDatabase() {
+  try {
+    const u = new URL(connectionString);
+    const host = u.hostname;
+    return {
+      host,
+      port: u.port || '5432',
+      database: u.pathname.slice(1) || '(default)',
+      isLocal: ['localhost', '127.0.0.1', '::1', 'postgres', 'db'].includes(host),
+    };
+  } catch {
+    return { host: '(unparseable)', port: '?', database: '?', isLocal: false };
+  }
+}
+
+export function databaseLabel() {
+  const d = describeDatabase();
+  return `${d.host}:${d.port}/${d.database}${d.isLocal ? ' (local)' : ' (REMOTE)'}`;
+}
+
 export const pool = new Pool({
   connectionString,
   ssl,

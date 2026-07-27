@@ -7,6 +7,32 @@ host (Vercel/Netlify), the three backend services on a container PaaS
 [Appendix B](#appendix-b--single-vps--compose) in case you switch later — the
 same Dockerfiles serve both.
 
+> ### One database, or two?
+>
+> Every credential, project and usage counter lives **per database**. Point local
+> development at its own Postgres and the deployed app at another, and a token
+> saved in one is simply absent from the other — which presents as a save that
+> silently did nothing, and costs an afternoon to work out.
+>
+> **To use a single database everywhere**, put the deployed `DATABASE_URL` in
+> `epic-dev-assignment/backend/.env` (Railway → Postgres → Connect → the *public*
+> connection URL, since your machine is outside Railway's private network) and set
+> `DATABASE_SSL=true`. If the handshake fails on certificate verification, supply
+> the provider's CA in `DATABASE_CA`; `DATABASE_SSL_INSECURE=true` exists as a
+> named, logged escape hatch.
+>
+> The cost of doing this is real: local runs then read and write production data.
+> Two things make that visible rather than surprising —
+>
+> - the backend **logs its target every boot** (`[DB] connected to host:port/db`),
+>   at WARN level when that database is remote;
+> - `npm run migrate` and `rewrap-credentials` **print the target and require you
+>   to type the database name** before touching a remote one. `--yes` /
+>   `CONFIRM_REMOTE_DB=1` bypasses it for CI and Railway's own shell.
+>
+> Keeping them separate is also fine — just check the boot line before concluding
+> that something didn't save.
+
 > ⚠️ **Back up `CREDENTIALS_MASTER_KEY` before you deploy.** It decrypts every
 > org's stored Jira/GitHub credentials. Lose it and every customer must
 > reconnect their integrations. Store it in a password manager / secrets vault,

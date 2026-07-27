@@ -3,11 +3,16 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pool } from '../db.js';
+import { confirmTarget } from './confirmTarget.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 
 async function run() {
+  if (!(await confirmTarget('Applying database migrations'))) {
+    await pool.end();
+    process.exit(1);
+  }
   const client = await pool.connect();
   try {
     // Tracking table so each migration is applied at most once, in order.
