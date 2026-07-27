@@ -4,6 +4,8 @@ import { generateEpics, regenerateComponent } from '../services/flaskProxy.js';
 import { getGeminiKey } from '../services/credentialProvider.js';
 import { classifyEpics } from '../services/epicClassifier.js';
 import { sendServerError } from '../utils/httpError.js';
+import { requireAiQuota } from '../middleware/requirePlan.js';
+import { recordUsage, METRICS } from '../services/billing.js';
 
 const router = express.Router();
 // Auth: enforced by the default-closed /api gate in server.js.
@@ -86,7 +88,7 @@ const aiLimiter = rateLimit({
 });
 
 // POST /api/generate - Generate epics from project description
-router.post('/generate', aiLimiter, async (req, res) => {
+router.post('/generate', aiLimiter, requireAiQuota, async (req, res) => {
   try {
     const { description } = req.body;
 
@@ -106,7 +108,7 @@ router.post('/generate', aiLimiter, async (req, res) => {
 });
 
 // POST /api/regenerate - Regenerate a specific epic component
-router.post('/regenerate', aiLimiter, async (req, res) => {
+router.post('/regenerate', aiLimiter, requireAiQuota, async (req, res) => {
   try {
     const { type, project_description, context } = req.body;
     console.log(`[Regenerate] type=${type}, user_requirements="${context?.user_requirements || '(none)'}"`);
@@ -140,7 +142,7 @@ router.post('/regenerate', aiLimiter, async (req, res) => {
 // behalf of every tenant.
 const MAX_EPICS_PER_CLASSIFY = 50;
 
-router.post('/classify-epics', aiLimiter, async (req, res) => {
+router.post('/classify-epics', aiLimiter, requireAiQuota, async (req, res) => {
   try {
     const { epics } = req.body;
 

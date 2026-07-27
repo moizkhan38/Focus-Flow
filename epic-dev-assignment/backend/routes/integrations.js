@@ -1,6 +1,8 @@
 import express from 'express';
 import fetch from 'node-fetch';
 import { requireOrgAdmin } from '../middleware/auth.js';
+import { requireFeature } from '../middleware/requirePlan.js';
+import { FEATURES } from '../services/billing.js';
 import { sendServerError } from '../utils/httpError.js';
 import { query } from '../db.js';
 import {
@@ -207,7 +209,7 @@ async function fetchBotStatus() {
 // The org admin creates the Slack app themselves and pastes its bot token and
 // signing secret here; no OAuth install flow is involved (that's Phase 4, and is
 // only needed to serve MANY workspaces from one app).
-router.put('/integrations/slack', requireOrgAdmin, async (req, res) => {
+router.put('/integrations/slack', requireOrgAdmin, requireFeature(FEATURES.STANDUP_BOT, 'The Slack standup bot is a paid feature.'), async (req, res) => {
   try {
     const botToken = String(req.body?.botToken || '').trim();
     const signingSecret = String(req.body?.signingSecret || '').trim();

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { apiFetch } from '../../lib/api.js';
+import { UpgradeBanner } from '../shared/UpgradePrompt';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { motion } from 'framer-motion';
 import { Zap, ChevronRight, Loader2 } from 'lucide-react';
@@ -41,6 +42,7 @@ export default function Step1_EpicGeneration() {
   const [loading, setLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState('');
   const [error, setError] = useState(null);
+  const [upgrade, setUpgrade] = useState(null);
   const [nameError, setNameError] = useState(null);
   const textareaRef = useRef(null);
   const nameRef = useRef(null);
@@ -80,6 +82,7 @@ export default function Step1_EpicGeneration() {
 
     setLoading(true);
     setError(null);
+    setUpgrade(null);
     setLoadingProgress('Sending to AI...');
 
     const progressSteps = [
@@ -104,6 +107,13 @@ export default function Step1_EpicGeneration() {
       if (!text) throw new Error('Empty response from server. The AI generation may have timed out — please try again.');
       let data;
       try { data = JSON.parse(text); } catch { throw new Error('Invalid response from server. Please try again.'); }
+
+      // 402 = the org's monthly AI allowance is spent. Not an error to apologise
+      // for — route them to the plans page instead of a red box they can't act on.
+      if (response.status === 402) {
+        setUpgrade({ message: data.message, feature: data.feature });
+        return;
+      }
 
       if (!data.success) {
         throw new Error(data.error || 'Failed to generate epics');
@@ -239,6 +249,11 @@ export default function Step1_EpicGeneration() {
             >
               {error}
             </motion.p>
+          )}
+          {upgrade && (
+            <div className="mt-3">
+              <UpgradeBanner message={upgrade.message} feature={upgrade.feature} />
+            </div>
           )}
         </div>
 

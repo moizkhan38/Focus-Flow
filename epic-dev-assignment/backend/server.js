@@ -19,6 +19,7 @@ import syncRouter from './routes/sync.js';
 import standupRouter from './routes/standup.js';
 import dbRouter from './routes/db.js';
 import integrationsRouter from './routes/integrations.js';
+import billingRouter from './routes/billing.js';
 import { ping as pingDb, pool, query } from './db.js';
 import { setIo, projectRoom } from './io.js';
 import { assertMasterKey } from './services/cryptoService.js';
@@ -213,6 +214,7 @@ app.use('/api', syncRouter);
 app.use('/api', standupRouter);
 app.use('/api', dbRouter);
 app.use('/api', integrationsRouter);
+app.use('/api', billingRouter);
 
 // Global error handler (last middleware). Log the real error; return a safe message.
 // Only errors explicitly marked expose:true reveal their message to the client.

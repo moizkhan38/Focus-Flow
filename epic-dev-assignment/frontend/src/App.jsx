@@ -32,6 +32,7 @@ import AssignPage from './pages/projects/AssignPage'
 import DevelopersPage from './pages/DevelopersPage'
 import Dashboard from './pages/jira/Dashboard'
 import Settings from './pages/Settings'
+import BillingPage from './pages/BillingPage'
 
 // Theme context (kept for existing workflow compatibility)
 const ThemeContext = createContext({ theme: 'light', toggleTheme: () => {}, isDark: false })
@@ -218,6 +219,11 @@ function App() {
             {/* Per-org integrations (Jira / GitHub) */}
             <Route path="/settings" element={
               <AuthGuard><SidebarLayout><Settings /></SidebarLayout></AuthGuard>
+            } />
+
+            {/* Plan & billing (org-level subscription) */}
+            <Route path="/billing" element={
+              <AuthGuard><SidebarLayout><BillingPage /></SidebarLayout></AuthGuard>
             } />
 
             {/* Catch-all */}

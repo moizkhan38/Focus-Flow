@@ -73,6 +73,15 @@ export class ApiError extends Error {
     if (!this.notConnected) return null;
     return this.code.replace('_NOT_CONNECTED', '').toLowerCase();
   }
+
+  /**
+   * 402 UPGRADE_REQUIRED → the org's plan doesn't cover this.
+   * Kept distinct from notConnected (412) and from a plain 403: each sends the
+   * user somewhere different — the pricing page, Integrations, or nowhere.
+   */
+  get upgradeRequired() {
+    return this.status === 402 && this.code === 'UPGRADE_REQUIRED';
+  }
 }
 
 const NOT_CONNECTED_COPY = {
@@ -99,10 +108,17 @@ export async function apiJson(path, opts = {}) {
   const res = await apiFetch(path, opts);
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(body.error || `Request failed: ${res.status}`, {
+    // Paywall responses carry a written explanation and the feature to buy;
+    // surfacing body.message means the user reads "You've used all 20 AI
+    // generations this month" rather than the machine code.
+    const err = new ApiError(body.message || body.error || `Request failed: ${res.status}`, {
       status: res.status,
       code: body.error,
     });
+    err.feature = body.feature ?? null;
+    err.limit = body.limit ?? null;
+    err.used = body.used ?? null;
+    throw err;
   }
   return body;
 }

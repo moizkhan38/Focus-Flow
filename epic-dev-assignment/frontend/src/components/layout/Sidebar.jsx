@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   LogOut,
   Plug,
+  CreditCard,
   Menu,
   X,
 } from 'lucide-react';
@@ -33,6 +34,7 @@ const navSections = [
     label: 'Configuration',
     items: [
       { to: '/settings', label: 'Integrations', icon: Plug },
+      { to: '/billing', label: 'Plan & Billing', icon: CreditCard },
     ],
   },
 ];

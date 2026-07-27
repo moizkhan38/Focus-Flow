@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../../lib/api.js';
+import { UpgradeBanner } from '../shared/UpgradePrompt';
 import { Upload, Loader2, CheckCircle2, AlertCircle, AlertTriangle, Users, FolderPlus, GitBranch, UserPlus, Play, Mail } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useIntegrations } from '../../hooks/useIntegrations';
@@ -17,6 +18,7 @@ const SYNC_STEPS = [
 export default function SyncButton({ epics, assignments, dependencies, deadline, projectName, sprintCount, developerJiraMap, onSyncComplete }) {
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
+  const [upgrade, setUpgrade] = useState(null);
   const [createdKey, setCreatedKey] = useState(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [syncWarnings, setSyncWarnings] = useState([]);
@@ -47,6 +49,7 @@ export default function SyncButton({ epics, assignments, dependencies, deadline,
     if (!canSync) return;
     setStatus('syncing');
     setError('');
+    setUpgrade(null);
 
     try {
       const res = await apiFetch('/api/ai/sync-jira', {
@@ -64,7 +67,14 @@ export default function SyncButton({ epics, assignments, dependencies, deadline,
       });
 
       if (!res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        // Jira sync is a paid feature: a 402 means "buy this", not "something
+        // broke", and belongs in an upgrade prompt rather than a red error.
+        if (res.status === 402) {
+          setUpgrade({ message: data.message, feature: data.feature });
+          setStatus('idle');
+          return;
+        }
         throw new Error(data.error || 'Sync failed');
       }
 
@@ -148,6 +158,8 @@ export default function SyncButton({ epics, assignments, dependencies, deadline,
           {error}
         </div>
       )}
+
+      {upgrade && <UpgradeBanner message={upgrade.message} feature={upgrade.feature} />}
 
       {/* Progress steps */}
       <AnimatePresence>

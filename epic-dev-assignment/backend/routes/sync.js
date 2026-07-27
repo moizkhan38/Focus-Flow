@@ -4,6 +4,8 @@ import { jiraClientFor } from '../services/jiraClientFor.js';
 import { generateProjectKey } from '../services/jiraService.js';
 import { query } from '../db.js';
 import { logger } from '../logger.js';
+import { requireFeature } from '../middleware/requirePlan.js';
+import { FEATURES } from '../services/billing.js';
 
 const router = express.Router();
 
@@ -143,7 +145,7 @@ function distributeStoriesAcrossSprints(allStories, sprintCount, dependencies = 
   return bins.map(b => b.stories);
 }
 
-router.post('/ai/sync-jira', async (req, res) => {
+router.post('/ai/sync-jira', requireFeature(FEATURES.JIRA_SYNC, 'Syncing to Jira is a paid feature. Upgrade to push epics, stories and sprints into your Jira site.'), async (req, res) => {
   const {
     epics = [],
     assignments = [],

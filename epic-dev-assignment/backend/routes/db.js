@@ -1,5 +1,6 @@
 import express from 'express';
 import { sendServerError } from '../utils/httpError.js';
+import { requireProjectQuota, requireDeveloperQuota } from '../middleware/requirePlan.js';
 import { requireOrg, orgOrInternal } from '../middleware/auth.js';
 import { query, ping } from '../db.js';
 import { refreshDevelopersForOrg } from '../services/developerRefresher.js';
@@ -126,7 +127,7 @@ router.get('/db/retrospectives', async (req, res) => {
 
 // ─── Projects ───────────────────────────────────────────────────────────────
 
-router.post('/db/projects', async (req, res) => {
+router.post('/db/projects', requireProjectQuota, async (req, res) => {
   try {
     const {
       id, name, description, status = 'draft',
@@ -207,7 +208,7 @@ router.delete('/db/projects/:id', async (req, res) => {
 
 // ─── Developers ─────────────────────────────────────────────────────────────
 
-router.post('/db/developers', async (req, res) => {
+router.post('/db/developers', requireDeveloperQuota, async (req, res) => {
   try {
     const {
       username, email, jira_username, avatar_url, primary_expertise, experience_level,
