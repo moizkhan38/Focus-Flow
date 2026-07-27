@@ -197,7 +197,15 @@ export async function billingStatus(req) {
 
   return {
     plan,
-    isPaid: plan !== 'free',
+    // Derived from FEATURES, not from the plan's key.
+    //
+    // Clerk enforces a $1 minimum on plans, so a literal $0 "free" plan cannot
+    // exist — the free tier is simply "no subscription". That makes the plan key
+    // arbitrary: a paid plan might be keyed anything at all. Reading paid-ness
+    // off the key would mislabel a real customer the moment someone renamed a
+    // plan in the dashboard, which is exactly the coupling the rest of this file
+    // avoids by gating on features.
+    isPaid: [jiraSync, standupBot, unlimitedProjects, unlimitedAi].some(Boolean),
     features: {
       [FEATURES.JIRA_SYNC]: jiraSync,
       [FEATURES.STANDUP_BOT]: standupBot,

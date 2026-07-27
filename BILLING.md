@@ -49,23 +49,38 @@ can rename or repackage plans later without touching code.
 | `unlimited_projects` | Removes the project **and** team-member caps |
 | `unlimited_ai` | Removes the monthly AI generation cap |
 
-## 3. Create the plans
+## 3. Create the plan
 
 Clerk → **Subscription plans** → **Plans for Organizations** tab → **Add Plan**.
 The tab matters: a plan created under the user tab bills individuals and this app
 will never see it.
 
-| Plan | Slug | Price | Features |
+**Create only the PAID plan.** Clerk enforces a $1 minimum price, so a literal $0
+"Free" plan cannot exist — and it doesn't need to. An organization with no
+subscription resolves to `plan: 'free'` with no features, which is exactly the
+free tier. Creating a cheap plan and *calling* it Free would charge people for
+the free allowances.
+
+| Plan | Key | Price | Features |
 |---|---|---|---|
-| Free | `free` | 0 | *(none)* |
-| Pro | `pro` | your price | all four above |
+| Pro | `pro` | your price (min $1) | all four above |
 
-Leave **Publicly available** ON for both. Switched off, a plan or feature is
-hidden from `<PricingTable />` — the plans page would render empty and nobody
-could subscribe.
+Leave **Publicly available** ON. Switched off, the plan is hidden from
+`<PricingTable />` — the billing page renders empty and nobody can subscribe.
 
-Anything without a paid feature falls back to the free allowances below. A third
-tier is just another plan with the same feature slugs — no code change.
+A **free trial** is safe to enable: Clerk reports trialing subscriptions with
+status `trialing`, which `services/billing.js` grants alongside `active`, so a
+trialing org has the full paid feature set. When the trial lapses without
+payment the subscription stops being active and the org falls back to the free
+tier automatically.
+
+Further tiers are just more plans carrying the same feature slugs — no code
+change. **Every plan you charge for must carry features**; a paid plan with none
+would bill the customer and still apply free-tier limits.
+
+> The plan's key is cosmetic. `isPaid` and every gate are derived from FEATURES,
+> so renaming or re-keying a plan in the dashboard cannot mislabel a paying
+> customer.
 
 ## 4. Free-tier allowances
 

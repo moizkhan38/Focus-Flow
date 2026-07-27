@@ -182,6 +182,33 @@ test('bare (unprefixed) feature claims also resolve', async () => {
   assert.equal(await billing.hasFeature(req, 'jira_sync'), false);
 });
 
+test('paid-ness is derived from features, not from the plan key', async () => {
+  // Clerk enforces a $1 minimum, so there is no $0 plan and the free tier is
+  // "no subscription". A paid plan may therefore be keyed anything — including
+  // "free", if that is the plan someone repurposed. Entitlement must follow the
+  // features, or a paying customer gets free-tier limits.
+  const paidButKeyedFree = {
+    orgId: 'org_keyed_free',
+    auth: { sessionClaims: { pla: 'o:free', fea: 'o:jira_sync,o:standup_bot,o:unlimited_projects,o:unlimited_ai' } },
+  };
+  const status = await billing.billingStatus(paidButKeyedFree);
+  assert.equal(status.plan, 'free', 'the key is reported as-is');
+  assert.equal(status.isPaid, true, 'but paid-ness comes from the features');
+  assert.equal(status.usage.projects.limit, null, 'so no free-tier cap applies');
+  assert.equal(status.usage.aiGenerations.limit, null);
+
+  // And the gates agree.
+  assert.equal((await run(requireFeature(billing.FEATURES.JIRA_SYNC), paidButKeyedFree)).code, 200);
+  assert.equal((await run(requireProjectQuota, paidButKeyedFree)).code, 200);
+});
+
+test('an unsubscribed org gets the free tier without any "free" plan existing', async () => {
+  const status = await billing.billingStatus(reqFor());
+  assert.equal(status.isPaid, false);
+  assert.equal(status.usage.projects.limit, billing.FREE_LIMITS.projects);
+  assert.equal(status.usage.aiGenerations.limit, billing.FREE_LIMITS.aiGenerationsPerMonth);
+});
+
 test('has() is called with the BARE slug, never namespaced with org:', async () => {
   // Clerk reserves "org:" for custom permissions. Passing "org:jira_sync" to
   // has({ feature }) never matches, so a paying org would be refused.
