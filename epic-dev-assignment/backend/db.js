@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import pg from 'pg';
 import { logger } from './logger.js';
 
@@ -21,10 +23,27 @@ if (!connectionString) {
 // the connection can present their own certificate and read or rewrite every
 // query, credentials included. Verification is now the default.
 //
-// Providers that present a self-signed chain need their CA supplied via
-// DATABASE_CA (PEM). DATABASE_SSL_INSECURE=true restores the old unverified
-// behaviour as a deliberate, named escape hatch — it logs a warning so it cannot
-// be switched on and forgotten.
+// Providers that present a self-signed chain need their CA supplied, either
+// inline as DATABASE_CA (PEM) or as a path in DATABASE_CA_FILE — a multi-line
+// PEM inside a .env file is awkward enough that people give up and reach for the
+// insecure switch instead.
+//
+// DATABASE_SSL_INSECURE=true restores the old unverified behaviour as a
+// deliberate, named escape hatch — it logs a warning so it cannot be switched on
+// and forgotten.
+function readCa() {
+  const inline = process.env.DATABASE_CA;
+  if (inline && inline.trim()) return inline;
+  const file = (process.env.DATABASE_CA_FILE || '').trim();
+  if (!file) return null;
+  try {
+    return fs.readFileSync(path.resolve(file), 'utf8');
+  } catch (err) {
+    logger.error(`[DB] DATABASE_CA_FILE could not be read (${file}): ${err.message}`);
+    return null;
+  }
+}
+
 function buildSsl() {
   if (process.env.DATABASE_SSL !== 'true') return undefined;
   if (process.env.DATABASE_SSL_INSECURE === 'true') {
@@ -34,8 +53,27 @@ function buildSsl() {
     );
     return { rejectUnauthorized: false };
   }
-  const ca = process.env.DATABASE_CA;
-  return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
+
+  const ca = readCa();
+  if (!ca) return { rejectUnauthorized: true };
+
+  // Hostname verification is deliberately skipped when a CA is PINNED.
+  //
+  // Managed providers that sit behind a TCP proxy — Railway among them — issue
+  // the leaf certificate for an internal name (CN=localhost) while you connect
+  // to a generated proxy host. The name can therefore never match, and the
+  // choice is not "verify the hostname or don't": it is between verifying the
+  // CHAIN against a CA you pinned yourself, or verifying nothing at all.
+  //
+  // Chain verification still proves the server holds a certificate issued by
+  // that specific CA, which defeats an interceptor presenting their own. It is
+  // strictly weaker than full verification and strictly stronger than
+  // DATABASE_SSL_INSECURE.
+  return {
+    rejectUnauthorized: true,
+    ca,
+    checkServerIdentity: () => undefined,
+  };
 }
 const ssl = buildSsl();
 

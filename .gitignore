@@ -52,3 +52,7 @@ htmlcov/
 nul
 .eslintcache
 .turbo/
+
+# Pinned CA for the managed Postgres TLS chain. Not a secret (a CA certificate
+# is public), but it is per-environment local config, so it stays out of the repo.
+*.pem

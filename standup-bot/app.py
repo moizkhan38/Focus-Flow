@@ -536,46 +536,33 @@ def resolve_submitter_jira_account(user_id):
 
 
 def move_jira_ticket(ticket_id, status_name, user_account_id=None, identity_reason=None):
-    """Transition a Jira ticket to the given status after ownership check.
+    """Transition a Jira ticket named in a standup.
 
-    The ownership check is MANDATORY. It used to be `if user_account_id:` —
-    skipped whenever the submitter's Jira account could not be resolved, which is
-    the common case for a Slack member with no email on their profile or no Jira
-    account. That made the check fail OPEN: the bot, holding the org's Jira
-    credentials, would transition any ticket the standup text named, regardless
-    of who owned it. Combined with the ticket IDs coming from a Gemini response
-    derived from attacker-controlled standup text, that is remote control of the
-    board by anyone in the Slack workspace.
+    OWNERSHIP CHECK DISABLED (deliberate product decision).
+
+    This previously refused unless the submitter's Jira account resolved AND the
+    ticket was assigned to them. In practice that blocked most real standups: a
+    Slack profile without an email, or a Slack and Jira account under different
+    addresses, made the submitter unidentifiable, and the answer to "I finished
+    SCRUM-3" became a denial.
+
+    What is given up: a workspace member can move a ticket that is not theirs by
+    naming it in their own standup. The remaining constraints still bound that —
+    ticket IDs are restricted to the project the standup was filed against
+    (_scope_tickets), capped at MAX_TICKETS_PER_STANDUP, the project must be one
+    the bot offers, and Slack request signatures are verified — so this is scoped
+    to members of the connected workspace acting on that workspace's own board.
+
+    The equivalent rule on the web Kanban is UNCHANGED: transitions there remain
+    assignee-only (middleware/jiraOwnership.js).
     """
     try:
         ticket_id = ticket_id.upper().strip()
-
-        if not user_account_id:
-            why = identity_reason or "we could not identify your Jira account"
-            return (
-                f"[DENIED] {ticket_id}: Ownership can't be verified — {why}. "
-                "Ask an admin to map your Slack account to your Jira user "
-                "(STANDUP_JIRA_USER_MAP) if the two use different email addresses."
-            )
 
         if not verify_ticket_exists(ticket_id):
             return (
                 f"[SKIPPED] {ticket_id}: "
                 "Issue does not exist or you don't have permission"
-            )
-
-        # Check that the ticket is assigned to the submitting user
-        assignee_id, assignee_name = get_ticket_assignee(ticket_id)
-        if assignee_id is None:
-            return (
-                f"[DENIED] {ticket_id}: "
-                "This ticket has no assignee"
-            )
-        if assignee_id != user_account_id:
-            return (
-                f"[DENIED] {ticket_id}: "
-                f"This ticket is assigned to {assignee_name}, "
-                "so you cannot move it. Please update the ticket or contact the assignee."
             )
 
         get_jira_client().issue_transition(ticket_id, status_name)
@@ -1387,12 +1374,24 @@ def _get_user_projects_map(members):
     # employee email roster into the log stream — a much broader audience than
     # the Slack workspace itself. Counts are enough to debug the matcher; the
     # addresses themselves are logged only at DEBUG, which is off by default.
-    email_to_uid = {m["email"]: m["id"] for m in members if m.get("email")}
+    email_to_uid = {m["email"].lower(): m["id"] for m in members if m.get("email")}
     members_without_email = [m["name"] for m in members if not m.get("email")]
     log.info(
         "[REMINDER] %d Slack member(s) with an email, %d without",
         len(email_to_uid), len(members_without_email),
     )
+
+    # Reminders are matched by email, and Slack and Jira accounts frequently use
+    # DIFFERENT addresses — which produced zero matches, and therefore total
+    # silence, with nothing in the logs suggesting why.
+    #
+    # STANDUP_JIRA_USER_MAP already maps a Slack user id to their Jira email for
+    # the standup flow. Invert it here so the same one-line configuration fixes
+    # both. Entries pointing at an accountId rather than an email are skipped —
+    # this lookup is keyed on the address Jira reports for an assignee.
+    for slack_uid, jira_identity in JIRA_USER_MAP.items():
+        if "@" in jira_identity:
+            email_to_uid.setdefault(jira_identity.strip().lower(), slack_uid)
     if members_without_email:
         log.debug(
             "[REMINDER] members without email (check users:read.email scope): %s",
@@ -1429,6 +1428,21 @@ def _get_user_projects_map(members):
     if unmatched:
         log.info("[REMINDER] %d Jira assignee email(s) matched no Slack user", len(unmatched))
         log.debug("[REMINDER] unmatched Jira assignee emails: %s", sorted(unmatched))
+
+    # Assignees exist but NONE of them map to a Slack account: the reminder is
+    # about to send nothing at all, and the reason is a configuration mismatch
+    # rather than an empty board. Say so plainly — silence here is what made this
+    # hard to diagnose.
+    if seen_jira_emails and not user_projects:
+        log.warning(
+            "[REMINDER] Found %d Jira assignee email(s) but matched NONE to a Slack "
+            "member, so no reminders will be sent. The two systems are using "
+            "different addresses. Map them with STANDUP_JIRA_USER_MAP, e.g. "
+            '{"U01ABC2DEF":"person@jira-address.com"} — find a Slack member ID '
+            "under profile -> ... -> Copy member ID.",
+            len(seen_jira_emails),
+        )
+
     log.info("[REMINDER] resolved %d user->project mapping(s)", len(user_projects))
     log.debug(
         "[REMINDER] user->projects map: %s",
