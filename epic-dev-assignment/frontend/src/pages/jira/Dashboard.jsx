@@ -453,6 +453,11 @@ export default function Dashboard() {
                   const SentimentIcon = sentimentIcon;
                   const ts = s.timestamp ? new Date(s.timestamp) : null;
                   const timeAgo = ts ? formatTimeAgo(ts) : '';
+                  // Postgres columns are `yesterday`/`today`. The ai_summary_*
+                  // names are the shape the bot used back when this endpoint
+                  // proxied to it — kept as a fallback for rows imported raw.
+                  const yesterday = s.yesterday || s.ai_summary_yesterday;
+                  const today = s.today || s.ai_summary_today;
 
                   return (
                     <motion.div
@@ -481,7 +486,7 @@ export default function Dashboard() {
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-gray-500 truncate mt-0.5">{s.ai_summary_today || s.ai_summary_yesterday || 'No summary'}</p>
+                          <p className="text-[11px] text-gray-500 truncate mt-0.5">{today || yesterday || 'No summary'}</p>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <SentimentIcon className={`h-3.5 w-3.5 ${sentimentColor}`} />
@@ -494,11 +499,11 @@ export default function Dashboard() {
                         <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
                           <div>
                             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-0.5">Yesterday</p>
-                            <p className="text-xs text-gray-700">{s.ai_summary_yesterday || '-'}</p>
+                            <p className="text-xs text-gray-700">{yesterday || '-'}</p>
                           </div>
                           <div>
                             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-0.5">Today</p>
-                            <p className="text-xs text-gray-700">{s.ai_summary_today || '-'}</p>
+                            <p className="text-xs text-gray-700">{today || '-'}</p>
                           </div>
                           {s.is_blocker && s.blocker_details && (
                             <div className="rounded-lg bg-rose-50 border border-rose-200 p-2.5">
