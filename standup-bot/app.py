@@ -7,6 +7,7 @@ import socket
 import ipaddress
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 import requests
 from datetime import datetime, date
 from dotenv import load_dotenv
@@ -42,6 +43,11 @@ ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")         # gates /test/* (hid
 FLASK_DEBUG = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
 REMINDER_HOUR = int(os.environ.get("REMINDER_HOUR", "9"))
 REMINDER_MINUTE = int(os.environ.get("REMINDER_MINUTE", "30"))
+# The wall clock the reminder time is expressed in. Without this the cron ran in
+# the HOST's local timezone, which is UTC on every container platform — so a
+# 09:30 reminder reached a UTC+5 team at 14:30 and looked like it was firing at
+# the wrong time. The bot serves one workspace (D6), so one timezone is correct.
+REMINDER_TIMEZONE = os.environ.get("REMINDER_TIMEZONE", "Asia/Karachi")
 # 0 / unset = once daily at the time above. Any positive value switches the
 # reminder to that interval instead — for demos and testing. See the scheduler.
 REMINDER_INTERVAL_MINUTES = int(os.environ.get("REMINDER_INTERVAL_MINUTES", "0") or 0)
@@ -1186,7 +1192,9 @@ def api_standup_status():
         'success': True,
         'orgId': STANDUP_ORG_ID or None,
         'workspace': _slack_workspace_name() if slack_configured else None,
-        'reminder': f"{REMINDER_HOUR:02d}:{REMINDER_MINUTE:02d}",
+        # Timezone included deliberately: "09:30" alone is ambiguous, and the
+        # host's UTC clock is exactly what made the reminder look mistimed.
+        'reminder': f"{REMINDER_HOUR:02d}:{REMINDER_MINUTE:02d} {REMINDER_TIMEZONE}",
         'jiraProjectKey': os.environ.get("JIRA_PROJECT_KEY") or None,
         # 'integrations' = pasted in the UI, 'env' = this process's .env
         'credentialSource': cfg.get("source"),
@@ -1742,6 +1750,23 @@ def test_stale():
 
 
 # --- Scheduler ---
+def _reminder_tz():
+    """Resolve REMINDER_TIMEZONE, falling back to UTC rather than failing to boot.
+
+    A bad tz name should not take the whole bot down — but it must be loud,
+    because the reminder would silently fire five hours off.
+    """
+    try:
+        return ZoneInfo(REMINDER_TIMEZONE)
+    except Exception as e:
+        log.error(
+            "REMINDER_TIMEZONE=%r is not a valid IANA zone (%s). Falling back to "
+            "UTC — the daily reminder will NOT fire at local %02d:%02d.",
+            REMINDER_TIMEZONE, e, REMINDER_HOUR, REMINDER_MINUTE,
+        )
+        return ZoneInfo("UTC")
+
+
 scheduler = BackgroundScheduler()
 scheduler.add_job(check_for_proactive_blockers, "interval", days=1)
 
@@ -1764,7 +1789,15 @@ if REMINDER_INTERVAL_MINUTES > 0:
     )
     scheduler.add_job(send_standup_reminder, "interval", minutes=REMINDER_INTERVAL_MINUTES)
 else:
-    scheduler.add_job(send_standup_reminder, CronTrigger(hour=REMINDER_HOUR, minute=REMINDER_MINUTE))
+    _tz = _reminder_tz()
+    log.info(
+        "[REMINDER] Daily standup reminder scheduled for %02d:%02d %s",
+        REMINDER_HOUR, REMINDER_MINUTE, _tz,
+    )
+    scheduler.add_job(
+        send_standup_reminder,
+        CronTrigger(hour=REMINDER_HOUR, minute=REMINDER_MINUTE, timezone=_tz),
+    )
 
 scheduler.add_job(check_missing_standups, "interval", days=1)
 # Keep the Jira project list warm so /standup never has to call Jira inline.
