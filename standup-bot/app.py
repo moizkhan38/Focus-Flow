@@ -42,6 +42,9 @@ ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")         # gates /test/* (hid
 FLASK_DEBUG = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
 REMINDER_HOUR = int(os.environ.get("REMINDER_HOUR", "9"))
 REMINDER_MINUTE = int(os.environ.get("REMINDER_MINUTE", "30"))
+# 0 / unset = once daily at the time above. Any positive value switches the
+# reminder to that interval instead — for demos and testing. See the scheduler.
+REMINDER_INTERVAL_MINUTES = int(os.environ.get("REMINDER_INTERVAL_MINUTES", "0") or 0)
 
 # Slack credentials may come from this process's env OR from the org's stored
 # Integrations credentials (resolved at request time by _slack_config below), so
@@ -1671,8 +1674,28 @@ def test_stale():
 # --- Scheduler ---
 scheduler = BackgroundScheduler()
 scheduler.add_job(check_for_proactive_blockers, "interval", days=1)
-# Daily standup reminder at REMINDER_HOUR:REMINDER_MINUTE (default 09:30).
-scheduler.add_job(send_standup_reminder, CronTrigger(hour=REMINDER_HOUR, minute=REMINDER_MINUTE))
+
+# Standup reminder cadence.
+#
+# Normally once a day at REMINDER_HOUR:REMINDER_MINUTE. Setting
+# REMINDER_INTERVAL_MINUTES overrides that with a repeating interval, which is
+# what you want when demonstrating or testing the bot — nobody can wait until
+# 09:30 tomorrow to see whether a fix worked.
+#
+# Anyone who has already submitted for a project is skipped, so this re-nudges
+# only the people who still owe a standup. It is still a DM to real people every
+# N minutes: set it back to blank once you are done.
+if REMINDER_INTERVAL_MINUTES > 0:
+    log.warning(
+        "[REMINDER] Running every %d minute(s) because REMINDER_INTERVAL_MINUTES "
+        "is set. This DMs everyone who still owes a standup, on every run. "
+        "Unset it to return to the daily %02d:%02d schedule.",
+        REMINDER_INTERVAL_MINUTES, REMINDER_HOUR, REMINDER_MINUTE,
+    )
+    scheduler.add_job(send_standup_reminder, "interval", minutes=REMINDER_INTERVAL_MINUTES)
+else:
+    scheduler.add_job(send_standup_reminder, CronTrigger(hour=REMINDER_HOUR, minute=REMINDER_MINUTE))
+
 scheduler.add_job(check_missing_standups, "interval", days=1)
 # Keep the Jira project list warm so /standup never has to call Jira inline.
 scheduler.add_job(refresh_jira_projects_cache, "interval", minutes=5)
