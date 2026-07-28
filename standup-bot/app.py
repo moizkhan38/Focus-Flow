@@ -1503,12 +1503,20 @@ def send_standup_reminder():
 
     if not members:
         log.info(f"[REMINDER] ERROR: No members found! Check SLACK_BOT_TOKEN and users:read scope.")
-        return
+        return {"members_found": 0, "reason": "No Slack members returned — check SLACK_BOT_TOKEN and the users:read scope."}
 
     user_projects = _get_user_projects_map(members)
     if not user_projects:
         log.info(f"[REMINDER] No active Jira assignments found across projects. Nothing to remind.")
-        return
+        return {
+            "members_found": len(members),
+            "matched_users": 0,
+            "reason": (
+                "No Slack member matched a Jira assignee. Either nothing is assigned "
+                "on the board, or the two systems use different email addresses — "
+                "map them with STANDUP_JIRA_USER_MAP."
+            ),
+        }
 
     today_str = date.today().isoformat()
     reminded = _reminded_today.setdefault(today_str, set())
@@ -1558,10 +1566,17 @@ def send_standup_reminder():
         except Exception as e:
             log.warning(f"Could not remind {member['name']}: {e}")
 
-    print(
-        f"[REMINDER] {digests_sent} digests, {nudges_sent} per-project follow-ups, "
-        f"{skipped_done} users already done"
+    log.info(
+        "[REMINDER] %d digest(s), %d per-project follow-up(s), %d user(s) already done",
+        digests_sent, nudges_sent, skipped_done,
     )
+    return {
+        "members_found": len(members),
+        "matched_users": len(user_projects),
+        "digests_sent": digests_sent,
+        "nudges_sent": nudges_sent,
+        "already_submitted": skipped_done,
+    }
 
 
 def check_missing_standups():
@@ -1612,36 +1627,51 @@ def check_missing_standups():
 
 @app.route("/test/reminder", methods=["GET"])
 def test_reminder():
-    """Manually trigger standup reminder for testing with diagnostics."""
-    results = {"members_found": 0, "sent": [], "failed": [], "errors": []}
+    """Run the REAL scheduled reminder now and return what it did.
+
+    This used to DM every workspace member unconditionally, which made it useless
+    as a test: it passed whether or not the scheduled reminder worked, because it
+    never touched the code the scheduler runs. A green result here while the daily
+    reminder silently sent nothing is exactly the failure it should have caught.
+
+    ?all=1 keeps the old blunt behaviour — a message to everyone, bypassing
+    project matching — for checking Slack delivery in isolation.
+    """
+    if request.args.get("all") == "1":
+        results = {"mode": "broadcast (bypasses project matching)",
+                   "members_found": 0, "sent": [], "failed": [], "errors": []}
+        try:
+            members = get_all_slack_members()
+            results["members_found"] = len(members)
+            if not members:
+                results["errors"].append(
+                    "No members returned. Check SLACK_BOT_TOKEN and the users:read scope."
+                )
+                return jsonify(results), 200
+            blocks = _build_reminder_blocks(
+                "Daily Standup Reminder",
+                "Good morning! Time to submit your daily standup.",
+            )
+            for member in members:
+                try:
+                    get_slack_client().chat_postMessage(
+                        channel=member["id"],
+                        text="Daily Standup Reminder — submit your standup",
+                        blocks=blocks,
+                    )
+                    results["sent"].append(member["name"])
+                except Exception as e:
+                    results["failed"].append({"name": member["name"], "error": str(e)})
+        except Exception as e:
+            results["errors"].append(str(e))
+        return jsonify(results), 200
 
     try:
-        members = get_all_slack_members()
-        results["members_found"] = len(members)
-
-        if not members:
-            results["errors"].append("No members returned. Check SLACK_BOT_TOKEN and users:read scope.")
-            return jsonify(results), 200
-
-        blocks = _build_reminder_blocks(
-            "Daily Standup Reminder",
-            "Good morning! Time to submit your daily standup.",
-        )
-        for member in members:
-            try:
-                get_slack_client().chat_postMessage(
-                    channel=member["id"],
-                    text="Daily Standup Reminder — submit your standup",
-                    blocks=blocks,
-                )
-                results["sent"].append(member["name"])
-            except Exception as e:
-                results["failed"].append({"name": member["name"], "error": str(e)})
-
+        summary = send_standup_reminder() or {}
     except Exception as e:
-        results["errors"].append(str(e))
-
-    return jsonify(results), 200
+        return jsonify({"mode": "scheduled reminder", "error": str(e)}), 200
+    return jsonify({"mode": "scheduled reminder (same code path as the schedule)",
+                    **summary}), 200
 
 
 @app.route("/test/whoami/<slack_user_id>", methods=["GET"])
