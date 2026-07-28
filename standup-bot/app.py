@@ -1404,8 +1404,22 @@ def _get_user_projects_map(members):
     user_projects = {}
     seen_jira_emails = set()
 
+    # Populate the project cache synchronously if it is still empty.
+    #
+    # get_cached_project_options() is built for the /standup request path, where
+    # Slack's 3-second deadline means a cold cache must fall back to a SINGLE
+    # default project and refresh in the background. That fallback is wrong here:
+    # the reminder would query one project, match nobody, and send nothing —
+    # which is exactly what happens on the first run after a deploy, silently.
+    #
+    # This is a scheduled job with no latency budget, so wait for the real list.
+    if not _jira_projects_cache["options"]:
+        log.info("[REMINDER] Project cache is cold — fetching the project list before matching")
+        refresh_jira_projects_cache()
+
     project_options = get_cached_project_options()
     project_keys = [opt.get("value") for opt in project_options if opt.get("value")]
+    log.info("[REMINDER] Checking %d project(s): %s", len(project_keys), ", ".join(project_keys))
 
     for key in project_keys:
         try:
