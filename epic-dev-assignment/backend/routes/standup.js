@@ -29,8 +29,12 @@ router.get('/standup/history', async (req, res) => {
     const params = [req.orgId];
     let where = 'org_id = $1';
     if (project_key) {
+      // Case-insensitive: the bot stores whatever the submitter picked in the
+      // Slack modal, so the same Jira project has arrived as both "SCRUM" and
+      // "scrum". Jira keys are case-insensitive, so an exact match would hide a
+      // team member's standup from the project page for a typo they can't see.
       params.push(project_key);
-      where += ` AND project_key = $${params.length}`;
+      where += ` AND UPPER(project_key) = UPPER($${params.length})`;
     }
     params.push(200);
 
