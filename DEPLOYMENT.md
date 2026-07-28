@@ -254,6 +254,7 @@ Also: **enable Gemini billing** on the key's Google Cloud project, or generation
    | `CLERK_PUBLISHABLE_KEY` | `pk_test_…` |
    | `CREDENTIALS_MASTER_KEY` | the base64 key you generated |
    | `INTERNAL_API_KEY` | the hex key you generated |
+   | `INTERNAL_ORG_ID` | the Clerk org id the standup bot serves. **Required if you deploy the bot** — unset means the internal lane is disabled and every standup write is refused with 503, so standups never reach the dashboard. |
    | `CORS_ORIGINS` | `https://focusflowpk.com,https://www.focusflowpk.com` |
    | `FLASK_URL` | `http://${{flask.RAILWAY_PRIVATE_DOMAIN}}:${{flask.PORT}}` (fill after Stage 3) |
    | `TRUST_PROXY` | `1` |
@@ -273,6 +274,40 @@ Also: **enable Gemini billing** on the key's Google Cloud project, or generation
    | `INTERNAL_API_KEY` | **same** value as the backend |
    | `FLASK_DEBUG` | `false` |
 4. Back on the **backend** service, set `FLASK_URL` = `http://${{flask.RAILWAY_PRIVATE_DOMAIN}}:${{flask.PORT}}` (Railway reference vars; `flask` = the Flask service's name). Redeploy the backend so it picks this up.
+
+### Stage 3b — Standup bot (optional, but read this before skipping it)
+Only needed for Slack standups. The failure mode is silent: with the wrong
+config the bot still analyses standups, still moves Jira tickets and still DMs a
+report, but writes every entry to a container-local JSON file that nobody reads
+and that redeploys wipe. Nothing on the dashboard, no error anywhere.
+
+1. **+ New → GitHub Repo** → same repo → **Root Directory** = `standup-bot`.
+2. **Generate Domain** — Slack needs a public URL for `/slack/*`.
+3. **Variables**:
+   | Var | Value |
+   |---|---|
+   | `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` | from the Slack app |
+   | `GEMINI_API_KEY` | your Gemini key |
+   | `JIRA_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` | the bot's own Jira credentials (D6) |
+   | `INTERNAL_API_KEY` | **same value as the backend's.** A mismatch = 401 on every write, and the bot falls back to local JSON without telling anyone. |
+   | `STANDUP_ORG_ID` | the Clerk org id — must equal the backend's `INTERNAL_ORG_ID` |
+   | `EXPRESS_DB_URL` | `https://<backend-domain>/api/db/standups` — **the full path.** Unset defaults to `http://localhost:3003/...`, which inside a container is nothing. |
+   | `REMINDER_TIMEZONE` | your team's IANA zone, e.g. `Asia/Karachi`. Containers run in UTC, so without it a 09:30 reminder arrives at 14:30 local. |
+   | `STANDUP_DATA_FILE` | a path on a mounted volume, so the emergency fallback survives a redeploy |
+4. Slack app → **Slash Commands** / **Event Subscriptions** / **Interactivity** → point at `https://<bot-domain>/slack/…`.
+5. **Verify the write lane before trusting it** — from your machine, with the key
+   you set on the bot:
+   ```bash
+   curl -i -X POST https://<backend-domain>/api/db/standups \
+     -H 'Content-Type: application/json' \
+     -H 'X-Internal-Key: <INTERNAL_API_KEY>' \
+     -H 'X-Org-Id: <STANDUP_ORG_ID>' \
+     -d '{"user_id":"probe","project_key":"PROBE","today":"probe"}'
+   ```
+   `201` = wired correctly (delete the probe row afterwards). `401 UNAUTHENTICATED`
+   = the key does not match the backend's. `503 INTERNAL_LANE_DISABLED` = the
+   backend is missing `INTERNAL_ORG_ID`. `403 INTERNAL_ORG_NOT_ALLOWED` =
+   `STANDUP_ORG_ID` and `INTERNAL_ORG_ID` disagree.
 
 ### Stage 4 — Point the frontend at the backend
 1. Vercel → project → **Settings → Environment Variables**:
