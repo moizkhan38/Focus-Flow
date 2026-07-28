@@ -625,7 +625,13 @@ def _express_headers(credentials=False):
 
 
 def save_standup_to_json(user_id, project_key, yesterday, today, blocker, analysis):
-    """Save standup to Postgres via Express backend; fall back to JSON on failure."""
+    """Save standup to Postgres via Express backend; fall back to JSON on failure.
+
+    Returns (entry, destination) where destination is "db", "json" or None. The
+    caller reports the destination back to Slack: a fallback to JSON means the
+    standup will NEVER appear on the dashboard, and saying "saved" regardless is
+    how a misconfigured EXPRESS_DB_URL stayed invisible for 25 standups.
+    """
     full_text = f"Yesterday: {yesterday}. Today: {today}. Blockers: {blocker}"
     blocker_details = None
     if analysis.get("is_blocker"):
@@ -656,10 +662,12 @@ def save_standup_to_json(user_id, project_key, yesterday, today, blocker, analys
         resp = requests.post(EXPRESS_DB_URL, json=new_entry, timeout=5, headers=_express_headers())
         if resp.ok:
             log.info(f"Saved standup to DB for {user_id}")
-            return new_entry
-        log.warning(f"DB save returned {resp.status_code}: {resp.text[:200]}")
+            return new_entry, "db"
+        log.warning(
+            f"DB save to {EXPRESS_DB_URL} returned {resp.status_code}: {resp.text[:200]}"
+        )
     except Exception as e:
-        log.warning(f"DB save failed, falling back to JSON: {e}")
+        log.warning(f"DB save to {EXPRESS_DB_URL} failed, falling back to JSON: {e}")
 
     # Fallback: append to local JSON so data isn't lost if Express/DB is down
     try:
@@ -671,11 +679,15 @@ def save_standup_to_json(user_id, project_key, yesterday, today, blocker, analys
         standup_data.append(new_entry)
         with open(STANDUP_JSON_PATH, "w") as f:
             json.dump(standup_data, f, indent=4)
-        print(f"[FALLBACK] Saved standup to JSON for {user_id}")
-        return new_entry
+        log.error(
+            "[FALLBACK] Standup for %s written to %s instead of the database — it "
+            "will NOT appear on the dashboard. Check EXPRESS_DB_URL (currently %s).",
+            user_id, STANDUP_JSON_PATH, EXPRESS_DB_URL,
+        )
+        return new_entry, "json"
     except Exception as e:
         log.error(f"Failed to save standup anywhere: {e}")
-        return None
+        return None, None
 
 
 def _analyzer_url_is_safe(url):
@@ -866,7 +878,7 @@ def process_standup_logic(user_id, project_key, yesterday, today, blocker):
             results.append(res)
 
         # Save standup data
-        standup_entry = save_standup_to_json(
+        standup_entry, saved_to = save_standup_to_json(
             user_id, project_key, yesterday, today, blocker, analysis
         )
 
@@ -886,6 +898,20 @@ def process_standup_logic(user_id, project_key, yesterday, today, blocker):
         today_tickets = ", ".join(
             analysis.get("today_tickets", [])
         ) or "None"
+
+        # Tell the truth about where the standup landed. "Saved" when it only
+        # reached the local JSON file sends the submitter away happy while the
+        # dashboard stays empty and nobody knows why.
+        if saved_to == "db":
+            save_note = "_Standup saved — it will appear on the dashboard._"
+        elif saved_to == "json":
+            save_note = (
+                "[WARNING] *Not saved to the dashboard.* The database was unreachable, "
+                "so this standup was written to the bot's local file only. "
+                "Tell your admin to check the bot's `EXPRESS_DB_URL`."
+            )
+        else:
+            save_note = "[WARNING] *This standup could not be saved anywhere.*"
 
         blocker_section = ""
         if analysis.get("is_blocker"):
@@ -912,7 +938,7 @@ def process_standup_logic(user_id, project_key, yesterday, today, blocker):
                 f"- *Today's Tickets:* {today_tickets}\n"
                 f"{blocker_section}\n\n"
                 f"*Jira Actions:*\n{jira_report}\n\n"
-                f"_Standup data saved and sent to analyzer._"
+                f"{save_note}"
             ),
         )
 

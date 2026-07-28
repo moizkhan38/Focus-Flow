@@ -77,7 +77,8 @@ class ProcessStandupLogicTests(unittest.TestCase):
         app.move_jira_ticket = MagicMock(side_effect=lambda tid, status, acct: f"- {tid} -> {status}")
         app.create_blocker_ticket = MagicMock(return_value="- Blocker ticket created")
         app.get_jira_account_id = MagicMock(return_value="acct-123")
-        app.save_standup_to_json = MagicMock(return_value={"user_id": "U1"})
+        # (entry, destination) — the caller reports the destination to Slack.
+        app.save_standup_to_json = MagicMock(return_value=({"user_id": "U1"}, "db"))
         app.send_to_standup_analyzer = MagicMock()
 
     def tearDown(self):
