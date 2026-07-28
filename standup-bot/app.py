@@ -630,7 +630,8 @@ def _express_headers(credentials=False):
     return headers
 
 
-def save_standup_to_json(user_id, project_key, yesterday, today, blocker, analysis):
+def save_standup_to_json(user_id, project_key, yesterday, today, blocker, analysis,
+                         user_name=None):
     """Save standup to Postgres via Express backend; fall back to JSON on failure.
 
     Returns (entry, destination) where destination is "db", "json" or None. The
@@ -649,6 +650,7 @@ def save_standup_to_json(user_id, project_key, yesterday, today, blocker, analys
 
     new_entry = {
         "user_id": user_id,
+        "user_name": user_name,
         "project_key": project_key,
         "timestamp": datetime.now().isoformat(),
         "full_text": full_text,
@@ -883,15 +885,24 @@ def process_standup_logic(user_id, project_key, yesterday, today, blocker):
             )
             results.append(res)
 
-        # Save standup data
-        standup_entry, saved_to = save_standup_to_json(
-            user_id, project_key, yesterday, today, blocker, analysis
-        )
-
+        # Resolve the display name BEFORE saving: it is stored on the row, and
+        # the dashboard has no Slack token to look it up with later. Falling back
+        # to the raw id here would persist "U0A3MQDQTUP" as someone's name, so
+        # send nothing and let the UI fall back instead.
         try:
             user_name = get_slack_client().users_info(user=user_id)["user"]["real_name"]
-        except Exception:
-            user_name = user_id
+        except Exception as e:
+            log.warning("Could not resolve Slack display name for %s: %s", user_id, e)
+            user_name = None
+
+        # Save standup data
+        standup_entry, saved_to = save_standup_to_json(
+            user_id, project_key, yesterday, today, blocker, analysis,
+            user_name=user_name,
+        )
+
+        # The Slack report below still needs something to address them by.
+        user_name = user_name or user_id
 
         # Build detailed report
         jira_report = (

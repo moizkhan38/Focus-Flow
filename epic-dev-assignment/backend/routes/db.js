@@ -23,7 +23,7 @@ router.get('/db/health', async (_req, res) => {
 router.post('/db/standups', orgOrInternal, async (req, res) => {
   try {
     const {
-      user_id, project_key, timestamp, yesterday, today, blocker,
+      user_id, user_name, project_key, timestamp, yesterday, today, blocker,
       is_blocker, blocker_details, sentiment, finished_tickets, today_tickets,
       full_text, raw_analysis,
     } = req.body;
@@ -35,12 +35,13 @@ router.post('/db/standups', orgOrInternal, async (req, res) => {
 
     const result = await query(
       `INSERT INTO standups
-         (org_id, user_id, project_key, timestamp, yesterday, today, blocker,
+         (org_id, user_id, user_name, project_key, timestamp, yesterday, today, blocker,
           is_blocker, blocker_details, sentiment, finished_tickets, today_tickets,
           full_text, raw_analysis)
-       VALUES ($1,$2,$3,COALESCE($4, NOW()),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       VALUES ($1,$2,$3,$4,COALESCE($5, NOW()),$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        RETURNING *`,
-      [req.orgId, user_id, project_key || null, timestamp || null, yesterday || null, today || null,
+      [req.orgId, user_id, user_name || null, project_key || null, timestamp || null,
+       yesterday || null, today || null,
        blocker || null, !!is_blocker, blocker_details || null, sentiment || null,
        finished_tickets || null, today_tickets || null, full_text || null, raw_analysis || null]
     );
