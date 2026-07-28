@@ -25,6 +25,37 @@ export const FEATURES = {
   UNLIMITED_AI: 'unlimited_ai',
 };
 
+// Accepted spellings for each feature.
+//
+// Clerk generates a feature's KEY from the NAME an operator types, so a plan
+// built with readable labels produces "Jira Synchronization" -> jira_synchronization
+// and "Unlimited project" -> unlimited_project. Those look right in the dashboard
+// and match nothing, and the failure is silent: the customer pays and is refused.
+//
+// Insisting on one exact string pushes that whole class of mistake onto whoever
+// configures the plan, where it is invisible until someone complains. Accepting a
+// small, explicit set of variants per feature costs nothing and removes it. The
+// FIRST entry is canonical and is what the docs tell people to use.
+const FEATURE_ALIASES = {
+  [/* jira_sync */ 'jira_sync']: [
+    'jira_sync', 'jira_synchronization', 'jira_sync_and_boards', 'jira_integration',
+  ],
+  standup_bot: [
+    'standup_bot', 'slack_standup_bot', 'standup_bot_slack', 'slack_bot',
+  ],
+  unlimited_projects: [
+    'unlimited_projects', 'unlimited_project',
+  ],
+  unlimited_ai: [
+    'unlimited_ai', 'unlimited_ai_generation', 'unlimited_ai_generations',
+  ],
+};
+
+function featureMatches(feature, held) {
+  const accepted = FEATURE_ALIASES[feature] || [feature];
+  return accepted.some((a) => held.has(a));
+}
+
 // Numeric allowances that DIFFER per tier (Basic 10 members, Pro 25) can't be
 // expressed as booleans, and Clerk features are booleans.
 //
@@ -33,15 +64,23 @@ export const FEATURES = {
 // is carried in the slug: `members_10`, `members_25`, `members_unlimited`. The
 // highest one an org holds wins, so a plan may carry several without harm, and
 // adding a `members_100` tier is dashboard-only with no deploy.
-const MEMBERS_SLUG_RE = /^members_(\d+)$/;
-const MEMBERS_UNLIMITED = 'members_unlimited';
+// Same tolerance for the member cap. Clerk turns "25 Members allowed" into
+// 25_members_allowed, so the number can land on either side of the word.
+const MEMBERS_SLUG_RES = [
+  /^members_(\d+)$/,           // canonical: members_25
+  /^(\d+)_members(?:_allowed)?$/, // from a label: 25_members_allowed, 25_members
+  /^members?_(\d+)_allowed$/,  // member_25_allowed
+];
+const MEMBERS_UNLIMITED = ['members_unlimited', 'unlimited_members'];
 
 function memberLimitFrom(features) {
-  if (features.has(MEMBERS_UNLIMITED)) return null; // null = unlimited
+  if (MEMBERS_UNLIMITED.some((s) => features.has(s))) return null; // null = unlimited
   let limit = FREE_LIMITS.developers;
   for (const f of features) {
-    const m = MEMBERS_SLUG_RE.exec(f);
-    if (m) limit = Math.max(limit, Number(m[1]));
+    for (const re of MEMBERS_SLUG_RES) {
+      const m = re.exec(f);
+      if (m) limit = Math.max(limit, Number(m[1]));
+    }
   }
   return limit;
 }
@@ -125,7 +164,14 @@ async function resolveEntitlement(req) {
 // labels produces keys like `slack_standup_bot` or `25_team_members` that look
 // right and match nothing. Holding features while recognising none of them is the
 // signature of exactly that, so say so loudly rather than silently downgrading.
-const KNOWN_SLUG_RE = /^(jira_sync|standup_bot|unlimited_projects|unlimited_ai|members_(\d+|unlimited))$/;
+// A slug the code can act on — canonical or any accepted variant. The warning
+// below must use the same tolerance as the gates, or it cries wolf on a plan
+// that is in fact working.
+function isKnownSlug(slug) {
+  if (Object.values(FEATURE_ALIASES).some((list) => list.includes(slug))) return true;
+  if (MEMBERS_UNLIMITED.includes(slug)) return true;
+  return MEMBERS_SLUG_RES.some((re) => re.test(slug));
+}
 
 // A free plan legitimately carries descriptive-only features — "2 projects
 // allowed", "5 team members allowed" — purely so the Free column of
@@ -139,7 +185,7 @@ const warnedOrgs = new Set();
 function warnIfNoSlugRecognised(orgId, plan, features) {
   if (features.size === 0) return;                       // nothing to match
   if (FREE_PLAN_RE.test(plan || '')) return;             // marketing copy on a free plan
-  if ([...features].some((f) => KNOWN_SLUG_RE.test(f))) return;
+  if ([...features].some(isKnownSlug)) return;
   if (warnedOrgs.has(orgId)) return;                     // once per process, not per request
   warnedOrgs.add(orgId);
   logger.warn(
@@ -182,7 +228,7 @@ export async function hasFeature(req, feature) {
     // has() throws on token versions that don't carry billing claims — fall through.
   }
   const { features } = await resolveEntitlement(req);
-  return features.has(feature);
+  return featureMatches(feature, features);
 }
 
 export async function currentPlan(req) {

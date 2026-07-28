@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../../lib/api.js';
+import { UpgradeBanner } from '../../components/shared/UpgradePrompt';
 import { useNavigate } from 'react-router-dom';
 import { WorkflowProvider, useWorkflow } from '../../context/WorkflowContext';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -95,6 +96,7 @@ function WizardContent() {
   const [syncStatus, setSyncStatus] = useState('idle');
   const [syncProgress, setSyncProgress] = useState('');
   const [syncError, setSyncError] = useState('');
+  const [upgrade, setUpgrade] = useState(null);
   const [saving, setSaving] = useState(false);
   const [sprintCount, setSprintCount] = useState('');
   const [jiraEmails, setJiraEmails] = useState({});
@@ -241,6 +243,7 @@ function WizardContent() {
 
     setSyncStatus('syncing');
     setSyncError('');
+    setUpgrade(null);
     setSyncProgress('Creating Jira project...');
 
     const progressSteps = [
@@ -281,8 +284,16 @@ function WizardContent() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Sync failed');
+        const data = await res.json().catch(() => ({}));
+        // 402 = the org's plan doesn't cover Jira sync. Show the written reason
+        // and a route to the plans page; the raw code "UPGRADE_REQUIRED" in a red
+        // box reads like a crash and tells the user nothing they can act on.
+        if (res.status === 402) {
+          setUpgrade({ message: data.message, feature: data.feature });
+          setSyncStatus('idle');
+          return;
+        }
+        throw new Error(data.message || data.error || 'Sync failed');
       }
 
       const data = await res.json();
@@ -590,6 +601,15 @@ function WizardContent() {
                     <p className="text-sm text-gray-500">
                       A new Jira project will be created automatically with all approved epics, stories, and assignments.
                     </p>
+
+                    {/* Plan doesn't cover Jira sync — an upgrade prompt, not an
+                        error. Renaming the project cannot fix it, so the rename
+                        box below stays hidden for this case. */}
+                    {upgrade && (
+                      <div className="mb-3">
+                        <UpgradeBanner message={upgrade.message} feature={upgrade.feature} />
+                      </div>
+                    )}
 
                     {syncError && (
                       <div className="space-y-3">

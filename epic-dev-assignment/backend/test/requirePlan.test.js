@@ -346,6 +346,52 @@ test('an unsubscribed org gets the free tier without any "free" plan existing', 
   assert.equal(status.usage.aiGenerations.limit, billing.FREE_LIMITS.aiGenerationsPerMonth);
 });
 
+// Clerk derives a feature's key from the NAME an operator types, so plans built
+// with readable labels produce keys that look right and match nothing. These are
+// the exact slugs a real Pro plan produced.
+test('label-derived feature keys still grant their feature', async () => {
+  const pro = {
+    orgId: 'org_label_derived',
+    auth: { sessionClaims: { pla: 'o:pro', fea:
+      'o:unlimited_project,o:jira_synchronization,o:standup_bot,o:25_members_allowed,o:unlimited_ai' } },
+  };
+  const status = await billing.billingStatus(pro);
+  assert.equal(status.isPaid, true);
+  assert.equal(status.features.jira_sync, true, 'jira_synchronization must grant jira_sync');
+  assert.equal(status.features.standup_bot, true);
+  assert.equal(status.features.unlimited_projects, true, 'unlimited_project (no s) must count');
+  assert.equal(status.features.unlimited_ai, true);
+  assert.equal(status.usage.developers.limit, 25, '25_members_allowed must set the cap');
+  assert.equal(status.usage.projects.limit, null);
+
+  assert.equal((await run(requireFeature(billing.FEATURES.JIRA_SYNC), pro)).code, 200);
+  assert.equal((await run(requireFeature(billing.FEATURES.STANDUP_BOT), pro)).code, 200);
+});
+
+test('member cap is read whichever side of the word the number falls', async () => {
+  for (const [slug, expected] of [
+    ['members_25', 25], ['25_members_allowed', 25], ['25_members', 25], ['member_25_allowed', 25],
+  ]) {
+    developerCount = 24;
+    const req = { orgId: `org_m_${slug}`, body: { username: 'newdev' },
+                  auth: { sessionClaims: { fea: `o:${slug}` } } };
+    assert.equal((await run(requireDeveloperQuota, req)).code, 200, `${slug} should allow 24`);
+    developerCount = expected;
+    const req2 = { orgId: `org_m2_${slug}`, body: { username: 'newdev' },
+                   auth: { sessionClaims: { fea: `o:${slug}` } } };
+    const r = await run(requireDeveloperQuota, req2);
+    assert.equal(r.limit, expected, `${slug} should cap at ${expected}`);
+  }
+});
+
+test('an unrelated feature slug still grants nothing', async () => {
+  // Tolerance must not become "match anything vaguely similar".
+  const req = { orgId: 'org_unrelated',
+                auth: { sessionClaims: { fea: 'o:jira,o:sync,o:premium_plan,o:everything' } } };
+  assert.equal(await billing.hasFeature(req, 'jira_sync'), false);
+  assert.equal(await billing.hasFeature(req, 'standup_bot'), false);
+});
+
 test('has() is called with the BARE slug, never namespaced with org:', async () => {
   // Clerk reserves "org:" for custom permissions. Passing "org:jira_sync" to
   // has({ feature }) never matches, so a paying org would be refused.
